@@ -1,86 +1,165 @@
 import numbers
 import random
-
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image
 import torch
+import cv2
 
 """
-Modified data transforms for [image, inter, gt] triplet
+Data augmentation for 2D image restoration/enhancement
+All the data augmentation classes are designed for the 
+numpy array in the size of (H, W, C)
 """
-class RandomCrop(object):
-    def __init__(self, size):
+
+class Resize(object):
+    """
+    Resize image(s) to the given size or scale factor 
+    Either specific size(tuple or int) or the scale factor
+    can be used to resize tensors.
+    """
+    def __init__(self, size=None, scale_factor=None):
         self.size = size
+        self.scale_factor = scale_factor
 
-    def __call__(self, image, label):
-        assert label is None or (image.size == label.size), \
-            "image and label doesn't have the same size {} / {}".format(
-                image.size, label.size)
+    def __call__(self, *input):
+        if self.size is not None:
+            assert self.scale_factor is None
+            self.size = self.size[::-1] if isinstance(self.size, tuple) \
+                                            else (self.size, self.size)
+            input = tuple(map(lambda x: cv2.resize(
+                        x, dsize=self.size, interpolation='cv2.INTER_LINEAR'
+                ), input))
 
-        w, h = image.size
-        tw = self.size
-        th = self.size
-        x1 = random.randint(0, w - tw)
-        y1 = random.randint(0, h - th)
-        results = [image.crop((x1, y1, x1 + tw, y1 + th))]
-        if label is not None:
-            results.append(label.crop((x1, y1, x1 + tw, y1 + th)))
-
-        return results
+        elif self.scale_factor is not None:
+            assert self.size is None
+            input = tuple(map(lambda x: cv2.resize(
+                        x, dsize=(0, 0), fx=self.scale_factor, fy=self.scale_factor, interpolation='cv2.INTER_LINEAR'
+                ), input))
         
-class RandomFlip(object):
-    def __call__(self, image, label):
-        if random.random() < 0.333:
-            results = [image.transpose(Image.FLIP_LEFT_RIGHT),
-                       label.transpose(Image.FLIP_LEFT_RIGHT)]
-        elif random.random() < 0.666:
-            results = [image.transpose(Image.FLIP_TOP_BOTTOM),
-                       label.transpose(Image.FLIP_TOP_BOTTOM)]
+        return input
+
+
+class RandomIdentityMapping(object):
+    """
+    Randomly set the (input, target) pair as (target, target).
+    p is used to set the probability of the identity mapping.
+    """
+    def __init__(self, p=0.1):
+        self.p = p
+
+    def __call__(self, *input):
+        if random.random() < self.p:
+            input = (input[1], input[1])
+            
+        return input
+
+
+class RandomCrop(object):
+    """
+    Randomly crop images to the given size.
+    Explicit size in the type of tuple or int is used 
+    to crop the tensor in desireable size.
+    """
+    def __init__(self, size):
+        self.size = size if isinstance(size, tuple) else (size, size)
+
+    def __call__(self, *input):
+        h, w, _ = input[0].shape
+        th, tw = self.size
+        top = bottom = left = right = 0
+
+        if w < tw:
+            left = (tw - w) // 2
+            right = tw - w - left
+        if h < th:
+            top = (th - h) // 2
+            bottom = th - h - top
+        if left > 0 or right > 0 or top > 0 or bottom > 0:
+            input = tuple(map(lambda x: cv2.copyMakeBorder(
+                x, top, bottom, left, right, cv2.BORDER_REFLECT), input))
+        
+        h, w, _ = input[0].shape
+        if h == th and w == tw:
+            return input
+
+        y1 = random.randint(0, h - th)
+        x1 = random.randint(0, w - tw)
+        
+        input = tuple(map(lambda x: x[y1:y1+th, x1:x1+tw, :], input))
+
+        return input
+
+
+class RandomScale(object):
+    """
+    Scale images in the random ratio 
+    in range[1, scale] or [scale1, scale2]
+    """
+    def __init__(self, scale=(0.5, 2.0)):
+        self.scale = scale if isinstance(scale, tuple) else (1, scale)
+
+    def __call__(self, *input):
+        ratio = random.uniform(*self.scale)
+        if ratio == 1:
+            return input
+        elif ratio < 1:
+            interpolation = cv2.INTER_AREA
         else:
-            results = [image, label]
-        return results
+            interpolation = cv2.INTER_LINEAR
+        input = tuple(map(lambda x: cv2.resize(x, dsize=(0, 0), fx=ratio, fy=ratio, interpolation=interpolation), input))
+        return input
+
+
+class RandomRotate(object):
+    """
+    Randomly rotates images in (90*n) degree.
+    (n = 0, 1, 2, 3)
+    """
+    def __call__(self, *input):
+        assert input[0].shape == input[1].shape
+        p = random.random()
+        if p < 0.25:
+            pass
+        elif p < 0.5:
+            input = tuple(map(lambda x: cv2.rotate(x, cv2.ROTATE_90_CLOCKWISE), input))
+        elif p < 0.75:
+            input = tuple(map(lambda x: cv2.rotate(x, cv2.ROTATE_90_COUNTERCLOCKWISE), input))
+        else:
+            input = tuple(map(lambda x: cv2.rotate(x, cv2.ROTATE_180), input))
+        return input
+
+
+class RandomFlip(object):
+    """
+    Randomly flips images horizontally or vertically
+    """
+    def __call__(self, *input):
+        if random.random() < 0.5:
+            input = tuple(map(lambda x: cv2.flip(x, 0), input))
+        
+        if random.random() < 0.5:
+            input = tuple(map(lambda x: cv2.flip(x, 1), input))
+        
+        return input
+
 
 class ToTensor(object):
-    """Converts a PIL.Image or numpy.ndarray (H x W x C) in the range
-    [0, 255] to a torch.FloatTensor of shape (C x H x W) in the range [0.0, 1.0].
+    """
+    Converts images in the shape of (H, W, C) in the range [0, 255] 
+    to a torch.FloatTensor of shape (C, H, W) in the range [0.0, 1.0].
     """
 
-    def __call__(self, pic, label):
-        if isinstance(pic, np.ndarray):
-            # handle numpy array
-            img = torch.from_numpy(pic)
-        else:
-            # handle PIL Image
-            img = torch.ByteTensor(torch.ByteStorage.from_buffer(pic.tobytes()))
-            # PIL image mode: 1, L, P, I, F, RGB, YCbCr, RGBA, CMYK
-            if pic.mode == 'YCbCr':
-                nchannel = 3
-            else:
-                nchannel = len(pic.mode)
-            img = img.view(pic.size[1], pic.size[0], nchannel)
-            # put it from HWC to CHW format
-            # yikes, this transpose takes 80% of the loading time/CPU
-            img = img.transpose(0, 1).transpose(0, 2).contiguous()
-        img = img.float().div(255)
-        
-        if label is None:
-            return img,
-        
-        else:
-            gt = torch.ByteTensor(torch.ByteStorage.from_buffer(label.tobytes()))
-            if label.mode == 'YCbCr':
-                nchannel=3
-            else:
-                nchannel = len(label.mode)
+    def __call__(self, *input):
+        input = tuple(map(
+            lambda x: torch.from_numpy(x).permute(2, 0, 1).contiguous().float().div(255.0), input
+            ))
 
-            gt = gt.view(label.size[1], label.size[0], nchannel)
-            gt = gt.transpose(0, 1).transpose(0, 2).contiguous()
-            gt = gt.float().div(255)
-            #return img, torch.LongTensor(np.array(label, dtype=np.int))
-            return img, gt
+        return input
+
 
 class Compose(object):
-    """Composes several transforms together.
+    """
+    Composes several transforms together.
     """
     def __init__(self, transforms):
         self.transforms = transforms
