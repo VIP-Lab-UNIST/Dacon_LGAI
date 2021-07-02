@@ -1,11 +1,10 @@
 import os
 import numpy as np
 import random
-
-from PIL import Image
-#import rawpy
-import data_transforms as transforms
 import torch
+from PIL import Image
+
+import lib.datasets.transforms as transforms
 
 
 class RestList(torch.utils.data.Dataset):
@@ -45,17 +44,17 @@ class RestList(torch.utils.data.Dataset):
 
     def _make_list(self, out_name):
         if self.phase == 'train':
-            img_path = os.path.join('./datasets', 'train_img.txt')
-            gt__path = os.path.join('./datasets', 'train_gt.txt')
+            img_path = os.path.join('./lib/datasets/info', 'train_img.txt')
+            gt__path = os.path.join('./lib/datasets/info', 'train_gt.txt')
 
-            self.img_list = [line.strip() for line in open(img_path, 'r')]
-            self.gt__list = [line.strip() for line in open(gt__path, 'r')]
+            self.img_list = [line.strip() for line in open(img_path, 'r')][:50]
+            self.gt__list = [line.strip() for line in open(gt__path, 'r')][:50]
         elif self.phase == 'val':            
-            img_path = os.path.join('./datasets', 'val_img.txt')
-            gt__path = os.path.join('./datasets', 'val_gt.txt')
+            img_path = os.path.join('./lib/datasets/info', 'val_img.txt')
+            gt__path = os.path.join('./lib/datasets/info', 'val_gt.txt')
 
-            self.img_list = [line.strip() for line in open(img_path, 'r')]
-            self.gt__list = [line.strip() for line in open(gt__path, 'r')]
+            self.img_list = [line.strip() for line in open(img_path, 'r')][:2]
+            self.gt__list = [line.strip() for line in open(gt__path, 'r')][:2]
         else :
-            img_path = os.path.join('./datasets', 'test_img.txt')
+            img_path = os.path.join('./lib/datasets/info', 'test_img.txt')
             self.img_list = [line.strip() for line in open(img_path, 'r')]

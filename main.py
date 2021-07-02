@@ -3,19 +3,26 @@ import time
 import shutil
 import sys
 import logging
+import argparse
+import threading
+import numpy as np
+from os.path import join, exists, split
+from math import log10
 from datetime import datetime
-from network import Net
-from dataset import RestList
-from utils import save_output_images, save_checkpoint, psnr, AverageMeter, LossFunction
-
 import torch
-from torch import nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
-import data_transforms as transforms
+from torch import nn
 from torch.autograd import Variable
-import numpy as np
+from torchvision import datasets
+
+import lib.datasets.transforms as transforms
+from models.network import Net
+from models.loss import LossFunction
+from lib.datasets.dataset import RestList
+from lib.utils.util import save_output_images, save_checkpoint, psnr, AverageMeter
+
 
 def train(train_loader, model, optim, criterion, epoch, eval_score=None, print_freq=10, logger=None):
     
@@ -167,7 +174,7 @@ def validate(val_loader, model, batch_size, crop_size=256, flag = False, eval_sc
         logger.info(' * Score is {s.avg:.3f}'.format(s=score))
     return score.avg
 
-def RUN(args, saveDirName='.', logger=None):
+def run(args, saveDirName='.', logger=None):
     #######################################
     # (1) Load and display hyper-parameters
     #######################################
@@ -196,6 +203,7 @@ def RUN(args, saveDirName='.', logger=None):
         RestList(data_dir, 'val', transforms.Compose(t), out_name=True),
         batch_size=1, shuffle=False, num_workers=8,
         pin_memory=True, drop_last=False)
+
     test_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'test', transforms.Compose(t), out_name=True),
         batch_size=1, shuffle=False, num_workers=8,
@@ -230,7 +238,7 @@ def RUN(args, saveDirName='.', logger=None):
             train(train_loader, model, optim, criterion, epoch, eval_score=psnr, logger=logger)        
 
             ## validate the network
-            val_score = validate(val_loader, model, batch_size=batch_size, save_vis=True, epoch=epoch+1, eval_score=psnr, logger=logger)
+            val_score = validate(val_loader, model, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, eval_score=psnr, logger=logger)
 
             ## save the neural network
             if best_prec1 < val_score : 
@@ -246,3 +254,53 @@ def RUN(args, saveDirName='.', logger=None):
         checkpoint = torch.load('model_params.tar')
         model.load_state_dict(checkpoint['model'])
         _ = validate(test_loader, model, batch_size=batch_size, crop_size=crop_size, output_dir='test', save_vis=True, epoch=0, eval_score=psnr, logger=logger)
+
+
+def parse_args():
+    # Training settings
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('cmd', choices=['train', 'test']) #
+    parser.add_argument('--data-dir', default=None, required=True) #
+    parser.add_argument('--save-dir', default=None, required=True) #
+    parser.add_argument('--crop-size', default=0, type=int) #
+    parser.add_argument('--step', type=int, default=200) #
+    parser.add_argument('--batch-size', type=int, default=64, metavar='N', #
+                        help='input batch size for training (default: 64)') #
+    parser.add_argument('--epochs', type=int, default=10, metavar='N', #
+                        help='number of epochs to train (default: 10)') #
+    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+                        help='learning rate (default: 0.01)') #
+    parser.add_argument('--resume', default='', type=str, metavar='PATH', #
+                        help='path to latest checkpoint (default: none)') #
+    args = parser.parse_args()
+
+    print(' '.join(sys.argv))
+    print(args)
+    
+    return args
+
+
+def main():
+    args = parse_args()
+    
+    dt_now = datetime.now()
+    timeName = "{:4d}{:02d}{:02d}{:02d}{:02d}".format(dt_now.year, dt_now.month, dt_now.day, dt_now.hour, dt_now.minute)
+    saveDirName = os.path.join(args.save_dir, timeName)
+    os.makedirs(saveDirName, exist_ok=True)
+
+    # logging configuration
+    FORMAT = "[%(asctime)-15s %(filename)s:%(lineno)d %(funcName)s] %(message)s"
+    logging.basicConfig(format=FORMAT)
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+
+    file_handler = logging.FileHandler(saveDirName + '/log_training.log')
+    logger.addHandler(file_handler)
+
+    run(args, saveDirName=saveDirName, logger=logger)
+
+if __name__ == '__main__':
+    main()
+
+
+
