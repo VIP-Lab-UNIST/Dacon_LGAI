@@ -1,4 +1,4 @@
-import os
+from os.path import join, basename, exists
 import numpy as np
 import random
 import torch
@@ -23,38 +23,34 @@ class RestList(torch.utils.data.Dataset):
         np.random.seed()
         random.seed()
 
-        if self.phase == 'train' :
-            img = Image.open(os.path.join(self.data_dir, self.img_list[index])).convert('RGB')
-            gt  = Image.open(os.path.join(self.data_dir, self.gt__list[index])).convert('RGB')
-            data = list(self.t_super(*[img, gt]))
+        image = cv2.imread(join(self.data_dir, self.phase, self.image_list[index]))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        elif self.phase == 'val':
-            img = Image.open(os.path.join(self.data_dir, self.img_list[index])).convert('RGB')
-            gt  = Image.open(os.path.join(self.data_dir, self.gt__list[index])).convert('RGB')
-            data = list(self.t_super(*[img, gt]))
-            data.append(self.img_list[index])
-        else : 
-            img = Image.open(os.path.join(self.data_dir, self.img_list[index])).convert('RGB')
-            data = list(self.t_super(*[img, img]))
-            data.append(self.img_list[index])
-        return tuple(data)
+        data = [image]
+
+        if self.gt_list is not None:
+            gt = cv2.imread(join(self.data_dir, self.phase, self.gt_list[index]))
+            gt = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            data.append(gt)
+    
+        data = tuple(data)
+        data = (self.transforms(*data))
+
+        if self.out_name:
+            data = (*data, basename(self.image_list[index]))
+
+        return data
 
     def __len__(self):
         return len(self.img_list)
 
-    def _make_list(self, out_name):
-        if self.phase == 'train':
-            img_path = os.path.join('./lib/datasets/info', 'train_img.txt')
-            gt__path = os.path.join('./lib/datasets/info', 'train_gt.txt')
-
-            self.img_list = [line.strip() for line in open(img_path, 'r')][:50]
-            self.gt__list = [line.strip() for line in open(gt__path, 'r')][:50]
-        elif self.phase == 'val':            
-            img_path = os.path.join('./lib/datasets/info', 'val_img.txt')
-            gt__path = os.path.join('./lib/datasets/info', 'val_gt.txt')
-
-            self.img_list = [line.strip() for line in open(img_path, 'r')][:2]
-            self.gt__list = [line.strip() for line in open(gt__path, 'r')][:2]
-        else :
-            img_path = os.path.join('./lib/datasets/info', 'test_img.txt')
-            self.img_list = [line.strip() for line in open(img_path, 'r')]
+    def _make_list(self, out_name):image_path = join('./datasets', self.phase + '_image.txt')
+        gt_path = join('./datasets', self.phase + '_gt.txt')
+        assert exists(image_path)
+        
+        self.image_list = [line.strip() for line in open(image_path, 'r')]
+        
+        if exists(gt_path):
+            self.gt_list = [line.strip() for line in open(gt_path, 'r')]
+            assert len(self.image_list) == len(self.gt_list)
+                    self.img_list = [line.strip() for line in open(img_path, 'r')]
