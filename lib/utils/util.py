@@ -77,8 +77,8 @@ def save_output_images(predictions, pre, filenames, output_dir, epoch):
     Saves a given (B x C x H x W) into an image file.
     If given a mini-batch tensor, will save the tensor as a grid of images.
     """
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+    
     # pdb.set_trace()
     for ind in range(len(filenames)):
         #print(predictions[ind].shape)

@@ -5,7 +5,11 @@ import sys
 import logging
 import argparse
 import threading
+import json
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from os.path import join, exists, split
 from math import log10
 from datetime import datetime
@@ -84,7 +88,6 @@ def validate(val_loader, model, batch_size, crop_size=256, flag = False, eval_sc
     #######################################
     # (2) Inference
     #######################################
-
     for i, (inp, gt, name) in enumerate(val_loader):
 
         # loading image pairs
@@ -99,6 +102,7 @@ def validate(val_loader, model, batch_size, crop_size=256, flag = False, eval_sc
         voting_mask = torch.zeros(1,1,H,W)  # denominator
 
         # cropping images into 256x256 patches, feed-forwarding to network, and collect
+        # stride 128
         for top in range(0, H, 128):
             for left in range(0, W, 128):
                                 
@@ -230,31 +234,45 @@ def run(args, saveDirName='.', logger=None):
     cudnn.benchmark = True
     best_prec1 = 0
     lr = args.lr
+    plot_val_scores = []
+    plot_epochs = []
     if args.cmd == 'train' : # train mode
         for epoch in range(args.epochs):
             logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, lr))
 
             ## train the network
             train(train_loader, model, optim, criterion, epoch, eval_score=psnr, logger=logger)        
-
             ## validate the network
             val_score = validate(val_loader, model, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, eval_score=psnr, logger=logger)
-
+            
             ## save the neural network
             if best_prec1 < val_score : 
                 best_prec1 = val_score
                 # checkpoint for g
-                history_path_g = saveDirName + '/' + 'checkpoint_{:03d}_'.format(epoch + 1) + str(best_prec1)[:6] + '.tar'
+                # history_path_g = saveDirName + '/' + 'checkpoint_{:03d}_'.format(epoch + 1) + str(best_prec1)[:6] + '.tar'
+                history_path_g = join(saveDirName, 'checkpoint_{:03d}'.format(epoch + 1)+'.tar')
                 save_checkpoint({
                     'epoch': epoch + 1,
                     'model': model.state_dict(),
                 }, True, filename=history_path_g)
 
-    else :  # test mode (if epoch = 0, the image format is png)
-        checkpoint = torch.load('model_params.tar')
-        model.load_state_dict(checkpoint['model'])
-        _ = validate(test_loader, model, batch_size=batch_size, crop_size=crop_size, output_dir='test', save_vis=True, epoch=0, eval_score=psnr, logger=logger)
+            ## save and plot the valid score
+            plot_epochs.append(epoch+1)
+            plot_val_scores.append(val_score.item())
+            plt.plot(plot_epochs, plot_val_scores, 'r')
+            plt.xticks(np.arange(0,30,step=2))
+            plt.xlabel('Epochs')
+            plt.yticks(np.arange(15,35,step=2))
+            plt.ylabel('Validation scores')
+            plt.grid()
+            plt.savefig(join(saveDirName, 'scores.png'))
+            with open(join(saveDirName, 'val_score.json'), 'w') as fp:
+                json.dump([plot_epochs, plot_val_scores], fp)
 
+    else :  # test mode (if epoch = 0, the image format is png)
+        checkpoint = torch.load(args.resume)
+        model.load_state_dict(checkpoint['model'])
+        _ = validate(test_loader, model, batch_size=batch_size, crop_size=crop_size, output_dir=saveDirName, save_vis=True, epoch=0, eval_score=psnr, logger=logger)
 
 def parse_args():
     # Training settings
