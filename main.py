@@ -197,7 +197,7 @@ def run(args, saveDirName='.', logger=None):
     t_super= [transforms.RandomCrop(crop_size),
                 transforms.RandomFlip(),
                 transforms.ToTensor()]
-                
+
     train_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'train', transforms.Compose(t_super)),
         batch_size=batch_size, shuffle=True, num_workers=8,
@@ -261,7 +261,7 @@ def run(args, saveDirName='.', logger=None):
             plot_epochs.append(epoch+1)
             plot_val_scores.append(val_score.item())
             plt.plot(plot_epochs, plot_val_scores, 'r')
-            plt.xticks(np.arange(0,30,step=2))
+            plt.xticks(np.arange(0, 50,step=2))
             plt.xlabel('Epochs')
             plt.yticks(np.arange(15,35,step=2))
             plt.ylabel('Validation scores')

@@ -20,10 +20,6 @@ class RandomCrop(object):
         w, h = image.size
         tw = self.size
         th = self.size
-        print(self.size)
-        print(image.size)
-        print(w-tw)
-        raise ValueError
         x1 = random.randint(0, w - tw)
         y1 = random.randint(0, h - th)
         results = [image.crop((x1, y1, x1 + tw, y1 + th))]
