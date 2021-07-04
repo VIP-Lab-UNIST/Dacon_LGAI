@@ -85,13 +85,15 @@ def save_output_images(predictions, pre, filenames, output_dir, epoch):
         im = Image.fromarray(np.transpose(predictions[ind], (1, 2, 0)).astype(np.uint8))
         #fn = output_dir + filenames[ind][:-4] + '.png'
         if epoch > 0 :
-            fn = os.path.join(output_dir, filenames[ind][:-4] + pre + '.jpg')
+            # fn = os.path.join(output_dir, filenames[ind][:-4] + pre + '.jpg')
+            fn = os.path.join(output_dir, filenames[ind].split('/')[-1][:-4] + '_' + pre + '.jpg')
             out_dir = os.path.split(fn)[0]
             if not os.path.exists(out_dir):
                 os.makedirs(out_dir)
             im.save(fn, quality=100)
         else :
-            fn = os.path.join(output_dir, filenames[ind][:-4] + pre + '.png')
+            # fn = os.path.join(output_dir, filenames[ind][:-4] + pre + '.png')
+            fn = os.path.join(output_dir, filenames[ind].split('/')[-1][:-4] + '_' + pre + '.png')
             out_dir = os.path.split(fn)[0]
             if not os.path.exists(out_dir):
                 os.makedirs(out_dir)

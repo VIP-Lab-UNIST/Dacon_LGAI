@@ -39,6 +39,7 @@ class RestList(torch.utils.data.Dataset):
             img = Image.open(self.img_list[index]).convert('RGB')
             data = list(self.t_super(*[img, img]))
             data.append(self.img_list[index])
+            
         return tuple(data)
 
     def __len__(self):
@@ -47,13 +48,25 @@ class RestList(torch.utils.data.Dataset):
     def _make_list(self, out_name):
         if self.phase == 'train':
 
-            self.img_list = glob(self.data_dir + '/train_data/*.png')
-            self.gt__list = glob(self.data_dir + '/train_gt/*.png')
+            # self.img_list = sorted(glob(self.data_dir + '/train_data/*.png'))
+            # self.gt__list = sorted(glob(self.data_dir + '/train_gt/*.png'))
+            
+            self.img_list = sorted(glob(self.data_dir + '/train_input_img/*.png'))
+            self.gt__list = sorted(glob(self.data_dir + '/train_label_img/*.png'))
 
         elif self.phase == 'val':            
             
-            self.img_list = glob(self.data_dir + '/val_data/*.png')
-            self.gt__list = glob(self.data_dir + '/val_gt/*.png')
+            # self.img_list = sorted(glob(self.data_dir + '/val_data/*.png'))
+            # self.gt__list = sorted(glob(self.data_dir + '/val_gt/*.png'))
+            
+            self.img_list = sorted(glob(self.data_dir + '/valid_input_img/*.png'))
+            self.gt__list = sorted(glob(self.data_dir + '/valid_label_img/*.png'))
 
-        else :
-            self.img_list = glob(self.data_dir + '/test_data/*.png')
+        else:            
+            # self.img_list = sorted(glob(self.data_dir + '/test_data/*.png'))
+
+            self.img_list = sorted(glob(self.data_dir + '/test_data/*.png'))
+            print('self.img_list: ', self.img_list)
+
+        if self.phase=='train' or self.phase=='val' : 
+            assert len(self.img_list)==len(self.gt__list), 'Input and GT length are not matched'
