@@ -30,7 +30,7 @@ class RestList(torch.utils.data.Dataset):
 
         if self.gt_list is not None:
             gt = cv2.imread(join(self.data_dir, self.phase, self.gt_list[index]))
-            gt = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
             data.append(gt)
     
         data = tuple(data)
