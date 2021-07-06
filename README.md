@@ -29,13 +29,14 @@ This repository hosts the code for LG AI challenge on the [DACON](https://dacon.
   ```
 ## Experiments
 
-- Set the dataset path in the `lib/datasets/dataset.py`
 
 1. Train
+- Set the environment in the `train.sh`.
+- The training results will be stored under `logs/` which is automatically made.
 ```bash
 ./train.sh
 ```
-The training results will be stored under `logs/` which is automatically made.
+
 
 2. Test
 ```bash

@@ -2,7 +2,9 @@ import os
 import numpy as np
 import random
 import torch
+from os.path import join
 from PIL import Image
+from glob import glob
 
 import lib.datasets.transforms as transforms
 
@@ -24,19 +26,20 @@ class RestList(torch.utils.data.Dataset):
         random.seed()
 
         if self.phase == 'train' :
-            img = Image.open(os.path.join(self.data_dir, self.img_list[index])).convert('RGB')
-            gt  = Image.open(os.path.join(self.data_dir, self.gt__list[index])).convert('RGB')
+            img = Image.open(self.img_list[index]).convert('RGB')
+            gt  = Image.open(self.gt__list[index]).convert('RGB')
             data = list(self.t_super(*[img, gt]))
 
-        elif self.phase == 'test':
-            img = Image.open(os.path.join(self.data_dir, self.img_list[index])).convert('RGB')
-            gt  = Image.open(os.path.join(self.data_dir, self.gt__list[index])).convert('RGB')
+        elif self.phase == 'val':
+            img = Image.open(self.img_list[index]).convert('RGB')
+            gt  = Image.open(self.gt__list[index]).convert('RGB')
             data = list(self.t_super(*[img, gt]))
             data.append(self.img_list[index])
         else : 
-            img = Image.open(os.path.join(self.data_dir, self.img_list[index])).convert('RGB')
+            img = Image.open(self.img_list[index]).convert('RGB')
             data = list(self.t_super(*[img, img]))
             data.append(self.img_list[index])
+            
         return tuple(data)
 
     def __len__(self):
@@ -44,17 +47,26 @@ class RestList(torch.utils.data.Dataset):
 
     def _make_list(self, out_name):
         if self.phase == 'train':
-            img_path = os.path.join('./lib/datasets/info', 'train_img.txt')
-            gt__path = os.path.join('./lib/datasets/info', 'train_gt.txt')
 
-            self.img_list = [line.strip() for line in open(img_path, 'r')]
-            self.gt__list = [line.strip() for line in open(gt__path, 'r')]
-        elif self.phase == 'test':            
-            img_path = os.path.join('./lib/datasets/info', 'val_img.txt')
-            gt__path = os.path.join('./lib/datasets/info', 'val_gt.txt')
+            # self.img_list = sorted(glob(self.data_dir + '/train_data/*.png'))
+            # self.gt__list = sorted(glob(self.data_dir + '/train_gt/*.png'))
+            
+            self.img_list = sorted(glob(self.data_dir + '/train_input_img/*.png'))
+            self.gt__list = sorted(glob(self.data_dir + '/train_label_img/*.png'))
 
-            self.img_list = [line.strip() for line in open(img_path, 'r')]
-            self.gt__list = [line.strip() for line in open(gt__path, 'r')]
-        else :
-            img_path = os.path.join('./lib/datasets/info', 'test_img.txt')
-            self.img_list = [line.strip() for line in open(img_path, 'r')]
+        elif self.phase == 'val':            
+            
+            # self.img_list = sorted(glob(self.data_dir + '/val_data/*.png'))
+            # self.gt__list = sorted(glob(self.data_dir + '/val_gt/*.png'))
+            
+            self.img_list = sorted(glob(self.data_dir + '/valid_input_img/*.png'))
+            self.gt__list  = sorted(glob(self.data_dir + '/valid_label_img/*.png'))
+
+        else:            
+            # self.img_list = sorted(glob(self.data_dir + '/test_data/*.png'))
+
+            self.img_list = sorted(glob(self.data_dir + '/test_data/*.png'))
+            print('self.img_list: ', self.img_list)
+
+        if self.phase=='train' or self.phase=='val' : 
+            assert len(self.img_list)==len(self.gt__list), 'Input and GT length are not matched'
