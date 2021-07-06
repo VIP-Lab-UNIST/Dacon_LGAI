@@ -28,7 +28,7 @@ class RestList(torch.utils.data.Dataset):
             gt  = Image.open(os.path.join(self.data_dir, self.gt__list[index])).convert('RGB')
             data = list(self.t_super(*[img, gt]))
 
-        elif self.phase == 'val':
+        elif self.phase == 'test':
             img = Image.open(os.path.join(self.data_dir, self.img_list[index])).convert('RGB')
             gt  = Image.open(os.path.join(self.data_dir, self.gt__list[index])).convert('RGB')
             data = list(self.t_super(*[img, gt]))
@@ -47,14 +47,14 @@ class RestList(torch.utils.data.Dataset):
             img_path = os.path.join('./lib/datasets/info', 'train_img.txt')
             gt__path = os.path.join('./lib/datasets/info', 'train_gt.txt')
 
-            self.img_list = [line.strip() for line in open(img_path, 'r')][:50]
-            self.gt__list = [line.strip() for line in open(gt__path, 'r')][:50]
-        elif self.phase == 'val':            
+            self.img_list = [line.strip() for line in open(img_path, 'r')]
+            self.gt__list = [line.strip() for line in open(gt__path, 'r')]
+        elif self.phase == 'test':            
             img_path = os.path.join('./lib/datasets/info', 'val_img.txt')
             gt__path = os.path.join('./lib/datasets/info', 'val_gt.txt')
 
-            self.img_list = [line.strip() for line in open(img_path, 'r')][:2]
-            self.gt__list = [line.strip() for line in open(gt__path, 'r')][:2]
+            self.img_list = [line.strip() for line in open(img_path, 'r')]
+            self.gt__list = [line.strip() for line in open(gt__path, 'r')]
         else :
             img_path = os.path.join('./lib/datasets/info', 'test_img.txt')
             self.img_list = [line.strip() for line in open(img_path, 'r')]
