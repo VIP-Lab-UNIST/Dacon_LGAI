@@ -28,15 +28,22 @@ class VanilaModule(nn.Module):
 
 # --- Build the Residual Dense Block --- #
 class RDB(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, flag=False):
         super(RDB, self).__init__()
         _in_channels = in_channels
-        growth_rate = in_channels // 2
+        growth_rate = in_channels // 4
         modules = []
-        for i in range(3):
-            modules.append(VanilaModule(_in_channels, growth_rate))
-            _in_channels += growth_rate            
-        modules.append(DeformModule(_in_channels, growth_rate))
+        if flag == True :
+            for i in range(3):
+                modules.append(VanilaModule(_in_channels, growth_rate))
+                _in_channels += growth_rate
+            modules.append(DeformModule(_in_channels, growth_rate))
+            _in_channels += growth_rate
+        else :
+            for i in range(4):
+                modules.append(VanilaModule(_in_channels, growth_rate))
+                _in_channels += growth_rate
+
         self.residual_dense_layers = nn.Sequential(*modules)
         self.conv_1x1 = nn.Conv2d(_in_channels, in_channels, kernel_size=1, padding=0)
 
@@ -49,35 +56,50 @@ class RDB(nn.Module):
 class Net(nn.Module):
     def __init__(self, in_channel=3):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=11, padding=1)
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=11, padding=5, padding_mode='reflect')
         self.DeformRDB1 = RDB(32)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride = 2, padding=1)
         self.DeformRDB2 = RDB(64)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride = 2, padding=1)
-        self.DeformRDB3 = RDB(128)
-        self.DeformRDB4 = RDB(128)
-        self.deconv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
-        self.DeformRDB4 = RDB(64)
-        self.deconv2 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
-        self.DeformRDB5 = RDB(32)
-        self.deconv1 = nn.Conv2d(32, 16, kernel_size=3, padding=1)
-        self.DeformRDB6 = RDB(64)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride = 4, padding=1)
+        self.DeformRDB3 = RDB(128, flag=True)
+        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride = 4, padding=1)
+        self.DeformRDB4 = RDB(256, flag=True)
+        self.bottle = RDB(256, flag=True)
 
-        self.conv1x1 = nn.Conv2d(256, 1, kernel_size=1, stride = 1, padding=0)
+        self.deconv4 = nn.Conv2d(256, 128, kernel_size=3, padding=1)
+        self.DeformRDB5 = RDB(128, flag=True)
+        self.deconv3 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
+        self.DeformRDB6 = RDB(64)
+        self.deconv2 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
+        self.DeformRDB7 = RDB(32)
+        self.conv_out = nn.Conv2d(32, 3, kernel_size=1)
 
     def forward(self, x):
         feat0 = self.conv1(x) # 32 ch
         feat  = self.DeformRDB1(feat0) # 32 ch
-        feat1 = self.conv2(feat) # 64 ch, 1/2 size
+        feat1 = self.conv2(feat)       # 64 ch, 1/2 size
         feat  = self.DeformRDB2(feat1) # 64 ch, 1/2 size
-        feat2 = self.conv3(feat) # 128 ch, 1/4 size
-        feat  = self.DeformRDB3(feat2) # 128 ch, 1/4 size
 
-        feat  = self.DeformRDB4(feat) # 128 ch, 1/4 size, bottle neck
+        feat2 = self.conv3(feat)       # 128 ch, 1/8 size
+        feat  = self.DeformRDB3(feat2) # 128 ch, 1/8 size
+        
+        feat  = self.conv4(feat)      # 256 ch, 1/32 size
+        feat  = self.DeformRDB4(feat) # 256 ch, 1/32 size
+        feat  = self.bottle(feat)
 
-        feat  = F.interpolate(feat, size=(x.size(2)//2, x.size(3)//2), mode='bilinear')
-        feat  = self.deconv3
-        return prob
+        feat  = F.interpolate(feat, size=(x.size(2)//8, x.size(3)//8), mode='bilinear') # 128ch, 1/8 size
+        feat  = feat2 + self.deconv4(feat) # 64ch, 1/8 size
+        feat  = self.DeformRDB5(feat) # 64ch, 1/8 size
+
+        feat  = F.interpolate(feat, size=(x.size(2)//2, x.size(3)//2), mode='bilinear') # 128ch, 1/2 size
+        feat  = feat1 + self.deconv3(feat) # 64ch, 1/2 size
+        feat  = self.DeformRDB6(feat) # 64ch, 1/2 size
+
+        feat  = F.interpolate(feat, size=(x.size(2), x.size(3)), mode='bilinear') # 64ch, orig size
+        feat  = feat0 + self.deconv2(feat) # 32ch, orig size
+        feat  = self.DeformRDB7(feat) # 64ch, 1/2 size
+        out   = self.conv_out(feat)
+        return out
 
 # --- Main model  --- #
 class SatPyramid(nn.Module):

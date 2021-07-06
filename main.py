@@ -22,7 +22,7 @@ from torch.autograd import Variable
 from torchvision import datasets
 
 import lib.datasets.transforms as transforms
-from models.network import MSBDN
+from models.network import Net
 from models.loss import LossFunction
 from lib.datasets.dataset import RestList
 from lib.utils.util import save_output_images, save_checkpoint, psnr, AverageMeter
@@ -53,7 +53,7 @@ def train(train_loader, model, optim, criterion, epoch, eval_score=None, print_f
         gt = torch.autograd.Variable((label.float()).cuda())
 
         ## feed-forward the data into network
-        _, out = model(img)        
+        out = model(img)        
         optim.zero_grad()
         
         ## calculate the loss
@@ -93,8 +93,13 @@ def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, ep
         img = (inp.float()).cuda()
         gt = gt.float()
 
+        _, _, h, w = img.size()
+        img = F.interpolate(img, size=(h + 16 - h % 16 , w + 16 - w % 16), mode='bilinear')
+
         with torch.no_grad():
-            out = model(img).cpu()
+            out = model(img).clamp(min=0, max=1).cpu() * 255
+            
+        out = F.interpolate(out, size=(h, w), mode='bilinear')
 
         # evaluation
         score.update(psnr(out, gt, 255), inp.size(0))
@@ -104,8 +109,8 @@ def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, ep
         if save_vis == True:
             save_dir = os.path.join(output_dir, 'epoch_{:04d}'.format(epoch))
             out = out.data.numpy()
-            save_output_images(out, str(epoch), name, save_dir, epoch)
-        raise ValueError
+            save_output_images(out, '', name, save_dir, epoch)
+        # raise ValueError
 
     if logger is not None:
         logger.info(' * Score is {s.avg:.3f}'.format(s=score))
@@ -152,7 +157,7 @@ def run(args, saveDirName='.', logger=None):
     # (3) Initialize neural netowrk and optimizer
     #######################################
 
-    model = MSBDN()
+    model = Net()
     model = torch.nn.DataParallel(model).cuda()
     optim = torch.optim.Adam(model.parameters(),args.lr)
 
@@ -184,25 +189,25 @@ def run(args, saveDirName='.', logger=None):
             if best_prec1 < val_score : 
                 best_prec1 = val_score
                 # checkpoint for g
-                # history_path_g = saveDirName + '/' + 'checkpoint_{:03d}_'.format(epoch + 1) + str(best_prec1)[:6] + '.tar'
-                history_path_g = join(saveDirName, 'checkpoint_{:03d}'.format(epoch + 1)+'.tar')
+                history_path_g = saveDirName + '/' + 'checkpoint_{:03d}_'.format(epoch + 1) + str(best_prec1)[:6] + '.tar'
+                # history_path_g = join(saveDirName, 'checkpoint_{:03d}'.format(epoch + 1)+'.tar')
                 save_checkpoint({
                     'epoch': epoch + 1,
                     'model': model.state_dict(),
                 }, True, filename=history_path_g)
 
-            ## save and plot the valid score
-            plot_epochs.append(epoch+1)
-            plot_val_scores.append(val_score.item())
-            plt.plot(plot_epochs, plot_val_scores, 'r')
-            plt.xticks(np.arange(0, 50,step=2))
-            plt.xlabel('Epochs')
-            plt.yticks(np.arange(15,35,step=2))
-            plt.ylabel('Validation scores')
-            plt.grid()
-            plt.savefig(join(saveDirName, 'scores.png'))
-            with open(join(saveDirName, 'val_score.json'), 'w') as fp:
-                json.dump([plot_epochs, plot_val_scores], fp)
+            # ## save and plot the valid score
+            # plot_epochs.append(epoch+1)
+            # plot_val_scores.append(val_score.item())
+            # plt.plot(plot_epochs, plot_val_scores, 'r')
+            # plt.xticks(np.arange(0, 50,step=2))
+            # plt.xlabel('Epochs')
+            # plt.yticks(np.arange(15,35,step=2))
+            # plt.ylabel('Validation scores')
+            # plt.grid()
+            # plt.savefig(join(saveDirName, 'scores.png'))
+            # with open(join(saveDirName, 'val_score.json'), 'w') as fp:
+            #     json.dump([plot_epochs, plot_val_scores], fp)
 
     else :  # test mode (if epoch = 0, the image format is png)
         checkpoint = torch.load(args.resume)
