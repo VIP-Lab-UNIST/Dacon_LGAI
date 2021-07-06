@@ -91,7 +91,7 @@ def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, ep
 
         # loading image pairs
         img = (inp.float()).cuda()
-        gt = gt.float()
+        gt = gt.float() * 255
 
         _, _, h, w = img.size()
         img = F.interpolate(img, size=(h + 16 - h % 16 , w + 16 - w % 16), mode='bilinear')
