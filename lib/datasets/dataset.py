@@ -4,6 +4,7 @@ import random
 import torch
 from os.path import join
 from PIL import Image
+from glob import glob
 import cv2
 import lib.datasets.transforms as transforms
 
@@ -16,7 +17,7 @@ class RestList(torch.utils.data.Dataset):
         self.out_name = out_name
 
         self.image_list = None
-        self.gt__list = None
+        self.gt_list = None
 
         self._make_list(out_name)
 
@@ -46,12 +47,7 @@ class RestList(torch.utils.data.Dataset):
         return len(self.image_list)
 
     def _make_list(self, out_name):
-        image_path = join('./lib/datasets/info', self.phase + '_img.txt')
-        gt_path = join('./lib/datasets/info', self.phase + '_gt.txt')
-        assert exists(image_path)
-        
-        self.image_list = [line.strip() for line in open(image_path, 'r')]
-        
-        if exists(gt_path):
-            self.gt_list = [line.strip() for line in open(gt_path, 'r')]
-            assert len(self.image_list) == len(self.gt_list)
+        self.image_list = sorted(glob(join(self.data_dir, self.phase+'_256/*.png')))
+        if self.phase=='train' or self.phase=='val' : 
+            self.gt_list = sorted(glob(join(self.data_dir, self.phase+'_gt_256/*.png')))
+            assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
