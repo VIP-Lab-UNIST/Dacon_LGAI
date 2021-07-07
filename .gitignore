@@ -2,4 +2,7 @@ data
 logs
 **/*__pycache__*
 **/*@eaDir*
+train.sh
+test.sh
 .DS_Store
+.tmp.py

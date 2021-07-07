@@ -9,12 +9,6 @@ This repository hosts the code for LG AI challenge on the [DACON](https://dacon.
   │   ├──datasets/ - about dataloading 
   │         ├── dataset.py
   │         ├── transforms.py
-  │         └── info/ - anything about data loading goes here
-  │             ├── test_img.txt
-  │             ├── train_gt.txt
-  │             ├── train_img.txt
-  │             ├── val_gt.txt
-  │             └── val_img.txt
   │   └── utils/ - utility functions
   │         └── util.py
   │
@@ -31,11 +25,12 @@ This repository hosts the code for LG AI challenge on the [DACON](https://dacon.
 
 
 1. Train
-Set the environment in the `train.sh`.
+- Set the environment in the `train.sh`.
+- The training results will be stored under `logs/` which is automatically made.
 ```bash
 ./train.sh
 ```
-The training results will be stored under `logs/` which is automatically made.
+
 
 2. Test
 ```bash
