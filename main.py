@@ -22,13 +22,13 @@ from torch.autograd import Variable
 from torchvision import datasets
 
 import lib.datasets.transforms as transforms
-from models.network import Net
-from models.loss import LossFunction
+from models.network import Net, Discriminator
+from models.loss import LossFunction, GANLoss
 from lib.datasets.dataset import RestList
 from lib.utils.util import save_output_images, save_checkpoint, psnr, AverageMeter
 
 
-def train(train_loader, model, optim, criterion, epoch, eval_score=None, print_freq=10, logger=None):
+def train(train_loader, models, optims, criterions, epoch, eval_score=None, print_freq=10, logger=None, path=None):
     
     #######################################
     # (1) Initialize    
@@ -38,13 +38,27 @@ def train(train_loader, model, optim, criterion, epoch, eval_score=None, print_f
     data_time = AverageMeter()
     losses = AverageMeter()
 
+    # Model
+    model = models[0]
+    dis_model = models[1]
     model.train()
+    dis_model.train()
+    # Optimizer
+    optim = optims[0]
+    dis_optim = optims[1]
+    # Criterions
+    criterion = criterions[0]
+    dis_criterion = criterions[1]
+
     end = time.time()
     
     #######################################
     # (2) Training
     #######################################
-    
+    iters = []
+    basic_losses = []
+    gan_losses = []
+    total_losses = []
     for i, (inp, label) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
@@ -57,22 +71,46 @@ def train(train_loader, model, optim, criterion, epoch, eval_score=None, print_f
         optim.zero_grad()
         
         ## calculate the loss
+        ## Basic loss
         loss = criterion(out, gt)
-        losses.update(loss.data, inp.size(0))
+        ## GAN loss
+        # Discriminator loss
+        dis_loss = dis_criterion(gt, target_is_real=True) + dis_criterion(dis_model(out), target_is_real=False)
+        # Generator loss
+        gen_loss = dis_criterion(dis_model(out), target_is_real=True)
+        ## Total loss
+        total_loss = loss+0.5*(dis_loss+gen_loss)
+        losses.update(total_loss.data, inp.size(0))
+        
+        iters.append(i)
+        basic_losses.append(loss.item())
+        gan_losses.append((dis_loss+gen_loss).item())
+        total_losses.append(total_loss.item())
 
         ## backward and update the network
-        loss.backward()
+        total_loss.backward()
         optim.step()
+        dis_optim.step()
 
         batch_time.update(time.time() - end)
         end = time.time()
-
+        
         if i % print_freq == 0:
-            logger.info('E : [{0}][{1}/{2}]\t'
-                        'T {batch_time.val:.3f}\n'
-                        'Loss {s.val:.3f} ({s.avg:.3f})\t'.format(
-                epoch, i, len(train_loader), batch_time=batch_time, s=losses))
-
+            logger.info('E : [{0}][{1}/{2}]'.format(epoch, i, len(train_loader)))
+    
+    ## save and plot the loss
+    if path is not None:
+        plt.plot(iters, total_losses, 'r', label='Total loss')
+        plt.plot(iters, gan_losses, 'g', label='GAN loss')
+        plt.plot(iters, basic_losses, 'b', label='Base loss')
+        plt.legend(loc='upper right')   
+        plt.xlabel('Iterations')
+        plt.ylabel('Losses')
+        plt.grid()
+        plt.savefig(join(path, 'losses_%depoch.png'%epoch))
+        plt.clf()
+        plt.cla()
+    
 def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, epoch=None, logger=None):
 
     #######################################
@@ -155,11 +193,16 @@ def run(args, saveDirName='.', logger=None):
     model = torch.nn.DataParallel(model).cuda()
     optim = torch.optim.Adam(model.parameters(),args.lr)
 
+    dis = Discriminator()
+    dis = torch.nn.DataParallel(dis).cuda()
+    dis_optim = torch.optim.Adam(dis.parameters(),args.lr)
+
     #######################################
     # (4) Define loss function
     #######################################
 
     criterion = LossFunction().cuda()
+    dis_criterion = GANLoss().cuda()
 
     #######################################
     # (5) Train or test
@@ -175,7 +218,7 @@ def run(args, saveDirName='.', logger=None):
             logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, lr))
 
             ## train the network
-            train(train_loader, model, optim, criterion, epoch, eval_score=psnr, logger=logger)        
+            train(train_loader, [model, dis], [optim, dis_optim], [criterion,dis_criterion], epoch, eval_score=psnr, logger=logger, path=saveDirName)        
             ## validate the network
             val_score = validate(val_loader, model, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger)
 
@@ -194,13 +237,15 @@ def run(args, saveDirName='.', logger=None):
             plot_epochs.append(epoch+1)
             plot_val_scores.append(val_score.item())
             plt.plot(plot_epochs, plot_val_scores, 'r')
-            plt.xticks(np.arange(0, 50,step=2))
+            # plt.xticks(np.arange(0, 50,step=2))
             plt.xlabel('Epochs')
             plt.yticks(np.arange(15,35,step=2))
             plt.ylabel('Validation scores')
             plt.grid()
             plt.savefig(join(saveDirName, 'scores.png'))
-            with open(join(saveDirName, 'val_score.json'), 'w') as fp:
+            plt.clf()
+            plt.cla()
+            with open(join(saveDirName, 'scores.json'), 'w') as fp:
                 json.dump([plot_epochs, plot_val_scores], fp)
 
     else :  # test mode (if epoch = 0, the image format is png)
