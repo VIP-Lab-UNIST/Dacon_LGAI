@@ -14,6 +14,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torchvision.models as models
 from torchvision.models import vgg16
+from torchvision.utils import save_image
 
 
 class MeanShift(nn.Conv2d):
@@ -72,33 +73,16 @@ def adjust_learning_rate(args, epoch, optimizer, lr):
         param_group['lr'] = lr
     return lr
 
-def save_output_images(predictions, pre, filenames, output_dir, epoch):
+def save_output_images(predictions, pre, pathes, output_dir, epoch):
     """
     Saves a given (B x C x H x W) into an image file.
     If given a mini-batch tensor, will save the tensor as a grid of images.
     """
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # pdb.set_trace()
-    for ind in range(len(filenames)):
-        #print(predictions[ind].shape)
-        im = Image.fromarray(np.transpose(predictions[ind], (1, 2, 0)).astype(np.uint8))
-        #fn = output_dir + filenames[ind][:-4] + '.png'
-        if epoch > 0 :
-            # fn = os.path.join(output_dir, filenames[ind][:-4] + pre + '.jpg')
-            fn = os.path.join(output_dir, filenames[ind].split('/')[-1][:-4] + '_' + pre + '.jpg')
-            out_dir = os.path.split(fn)[0]
-            if not os.path.exists(out_dir):
-                os.makedirs(out_dir)
-            im.save(fn, quality=100)
-        else :
-            # fn = os.path.join(output_dir, filenames[ind][:-4] + pre + '.png')
-            fn = os.path.join(output_dir, filenames[ind].split('/')[-1][:-4] + '_' + pre + '.png')
-            out_dir = os.path.split(fn)[0]
-            if not os.path.exists(out_dir):
-                os.makedirs(out_dir)
-            im.save(fn)
-
+    for ind in range(len(pathes)):
+        os.makedirs(output_dir, exist_ok=True)
+        fn = os.path.join(output_dir, pathes[ind].split('/')[-1].replace('.png', '.jpg'))
+        save_image(predictions[ind], fn)
+        
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([math.exp(-(x - window_size//2)**2/float(2*sigma**2)) for x in range(window_size)])
     return gauss/gauss.sum()

@@ -30,11 +30,18 @@ class RestList(torch.utils.data.Dataset):
 
         data = [image]
 
-        if self.gt_list is not None:
+        if self.phase == 'train':
+            gt = cv2.imread(join(self.data_dir, self.gt_list[index]))
+            gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
+            mask = cv2.imread(join(self.data_dir, self.mask_list[index]), cv2.IMREAD_GRAYSCALE)[:,:,np.newaxis]
+            data.extend([gt, mask])
+        elif self.phase == 'val':
             gt = cv2.imread(join(self.data_dir, self.gt_list[index]))
             gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
             data.append(gt)
-    
+        else:
+            pass
+
         data = tuple(data)
         data = (self.transform(*data))
 
@@ -47,7 +54,17 @@ class RestList(torch.utils.data.Dataset):
         return len(self.image_list)
 
     def _make_list(self, out_name):
-        self.image_list = sorted(glob(join(self.data_dir, self.phase+'_256/*.png')))
-        if self.phase=='train' or self.phase=='val' : 
-            self.gt_list = sorted(glob(join(self.data_dir, self.phase+'_gt_256/*.png')))
+        if self.phase=='train': 
+            self.image_list = sorted(glob(join(self.data_dir, 'train_256/*.png')))
+            self.gt_list = sorted(glob(join(self.data_dir, 'train_gt_256/*.png')))
+            self.mask_list = sorted(glob(join(self.data_dir, 'train_256_mask/*.png')))
             assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
+        elif self.phase=='val' : 
+            self.image_list = sorted(glob(join(self.data_dir, 'valid_input_img/*.png')))
+            self.gt_list = sorted(glob(join(self.data_dir, 'valid_label_img/*.png')))
+            assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
+        else:
+            self.image_list = sorted(glob(join(self.data_dir, 'test_input_img/*.png')))
+            self.gt_list = sorted(glob(join(self.data_dir, 'test_input_img/*.png')))
+            assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
+        

@@ -6,3 +6,4 @@ train.sh
 test.sh
 .DS_Store
 tmp.py
+**/*.png
