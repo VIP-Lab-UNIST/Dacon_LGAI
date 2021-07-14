@@ -7,8 +7,7 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py train \
                                 --ssim_weight 0.2 \
                                 --perc_weight 0.001 \
                                 --gan_weight 0.005 \
-                                --save-dir ./logs/train/DWGAN
+                                --save-dir ./logs/train/DWGAN/
 
-                                # --save-dir ./logs/train/mask_only_output
-                                # --save-dir ./logs/train/mask_gan00
+                                # --save-dir ./logs/train/DWGAN/DeformConv/KA_attn
                                 # 32
