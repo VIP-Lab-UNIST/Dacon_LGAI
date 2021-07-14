@@ -1,150 +1,21 @@
 import os
-import time
-import shutil
 import sys
 import logging
 import argparse
-import threading
-import json
-import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from os.path import join, exists, split
-from math import log10
-from datetime import datetime
-from tqdm import tqdm
 import torch
-import torch.nn.functional as F
-import torch.backends.cudnn as cudnn
 import torch.optim as optim
-from torch import nn
-from torch.autograd import Variable
-from torchvision import datasets
-from torchvision.utils import save_image
-
-import lib.datasets.transforms as transforms
-from models.network import Net, Discriminator
-from models.loss import LossFunction, GANLoss
-from lib.datasets.dataset import RestList
-from lib.utils.util import save_output_images, save_checkpoint, psnr, AverageMeter
-
+import torch.backends.cudnn as cudnn
 import warnings
 warnings.filterwarnings("ignore")
+from datetime import datetime
 
-def train(train_loader, models, optims, criterions, gan_weight, epoch, eval_score=None, print_freq=10, logger=None):
-    
-    #######################################
-    # (1) Initialize    
-    #######################################
-
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses = AverageMeter()
-
-    # Model
-    model = models[0]
-    dis_model = models[1]
-    model.train()
-    dis_model.train()
-    # Optimizer
-    optim = optims[0]
-    dis_optim = optims[1]
-    # Criterions
-    criterion = criterions[0]
-    dis_criterion = criterions[1]
-
-    end = time.time()
-    
-    #######################################
-    # (2) Training
-    #######################################
-    iters = []
-    base_losses = []
-    gan_losses = []
-    total_losses = []
-    kernel_size = 21
-    max_pool = nn.MaxPool2d(kernel_size, stride =1, padding=(kernel_size-1)//2)
-    for i, (inputs, gts) in enumerate(tqdm(train_loader, desc="Training iteration")):
-        data_time.update(time.time() - end)
-
-        ## loading image pairs
-        inputs = inputs.float().cuda()
-        gts = gts.float().cuda()
-        masks = torch.where(inputs.mean(axis=1, keepdim=True) > 0.9, torch.tensor([1.]).cuda(), torch.zeros([1]).cuda())
-        for _ in range(6):
-            masks = max_pool(masks)
-        # inverse mask
-        # masks = torch.abs(masks - 1.)
-
-        ## feed-forward the data into network
-        outs = model(inputs)        
-        optim.zero_grad()
-        dis_optim.zero_grad()
-        
-        ## Calculate the loss
-        ## Base loss
-        loss = criterion(outs, gts)
-        # loss = criterion(outs*masks, gts*masks) + criterion(outs, gts)
-        
-        ## GAN loss
-        dis_loss = dis_criterion(gts*masks, target_is_real=True) + dis_criterion(dis_model(outs.detach()*masks), target_is_real=False)
-        gen_loss = dis_criterion(dis_model(outs*masks), target_is_real=True)
-        ## Total loss
-        total_loss = loss+gan_weight*(dis_loss+gen_loss)
-        losses.update(total_loss.data, inputs.size(0))
-        
-        ## backward and update the network
-        total_loss.backward()
-        optim.step()
-        dis_optim.step()
-
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-        iters.append(epoch*len(train_loader)+i)
-        base_losses.append(loss.item())
-        gan_losses.append((dis_loss+gen_loss).item())
-        total_losses.append(total_loss.item())
-
-    return [iters, base_losses, gan_losses, total_losses]
-    
-def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, epoch=None, logger=None):
-
-    #######################################
-    # (1) Initialize    
-    #######################################
-
-    batch_time = AverageMeter()
-    score = AverageMeter()
-    model.eval()
-    end = time.time()
-
-    #######################################
-    # (2) Inference
-    #######################################
-    for i, (inp, gt, name) in enumerate(tqdm(val_loader, desc="Validation iteration")):
-        # loading image pairs
-        img = inp.float().cuda()
-        gt = gt.float()
-
-        with torch.no_grad():
-            out = model(img).cpu()
-
-        # evaluation
-        score.update(psnr(out, gt, 1.), inp.size(0))
-
-        batch_time.update(time.time() - end)
-        end = time.time()
-        if save_vis == True:
-            save_dir = os.path.join(output_dir, 'epoch_{:04d}'.format(epoch))
-            save_output_images(out, str(epoch), name, save_dir, epoch)
-        
-    if logger is not None:
-        logger.info('E : [{0}]'.format(epoch))
-        logger.info(' * Score is {s.avg:.3f}'.format(s=score))
-
-    return score.avg
+import lib.datasets.transforms as transforms
+from run.train import train
+from run.test import validate
+from lib.datasets.dataset import RestList
+from models.network import fusion_net, Discriminator
+from models.loss import LossFunction, GANLoss
+from lib.utils.util import save_output_images, save_checkpoint, psnr, plot_losses, plot_scores
 
 def run(args, saveDirName='.', logger=None):
     #######################################
@@ -162,12 +33,10 @@ def run(args, saveDirName='.', logger=None):
     #######################################
 
     data_dir = args.data_dir
-    # t_super= [transforms.RandomCrop(crop_size),
-    #             transforms.RandomFlip(),
-    #             transforms.ToTensor()]
     
     t_super= [transforms.RandomCrop(crop_size),
                 transforms.RandomFlip(),
+                transforms.RandomRotate(),
                 transforms.ToTensor()]
 
     train_loader = torch.utils.data.DataLoader(
@@ -190,14 +59,16 @@ def run(args, saveDirName='.', logger=None):
     # (3) Initialize neural netowrk and optimizer
     #######################################
 
-    gen = Net()
+    gen = fusion_net()
     gen = torch.nn.DataParallel(gen).cuda()
-    gen_optim = torch.optim.Adam(gen.parameters(),args.lr)
+    gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
+    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[3000, 5000, 6000], gamma=0.5)
 
     dis = Discriminator()
     dis = torch.nn.DataParallel(dis).cuda()
-    dis_optim = torch.optim.Adam(dis.parameters(),args.lr)
-
+    dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
+    dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[3000, 5000, 6000], gamma=0.5)
+    
     if args.resume is not None:
         state = torch.load(args.resume)
         start_epoch = state['epoch']
@@ -212,7 +83,7 @@ def run(args, saveDirName='.', logger=None):
     # (4) Define loss function
     #######################################
 
-    criterion = LossFunction().cuda()
+    criterion = LossFunction(weight_ssim=args.ssim_weight, weight_perc=args.perc_weight).cuda()
     dis_criterion = GANLoss().cuda()
 
     #######################################
@@ -232,53 +103,39 @@ def run(args, saveDirName='.', logger=None):
         for epoch in range(start_epoch, args.epochs):
             logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, lr))
             ## train the network
-            train_info = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], args.gan_weight, epoch, eval_score=psnr, logger=logger)        
+            train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], args.gan_weight, eval_score=psnr, logger=logger)        
             ## validate the network
             val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger)
 
             ## save the neural network
-            history_path_g = join(saveDirName, 'checkpoint_{:03d}'.format(epoch + 1)+'.tar')
+            history_path_g = os.path.join(saveDirName, 'checkpoint_{:03d}'.format(epoch + 1)+'.tar')
             save_checkpoint({
                 'epoch': epoch + 1,
                 'gen': gen.state_dict(),
                 'dis': dis.state_dict(),
                 'gen_optim': gen_optim.state_dict(),
                 'dis_optim': dis_optim.state_dict(),
+                'gen_scheduler': gen_scheduler.state_dict(),
+                'dis_scheduler': dis_scheduler.state_dict(),
             }, True, filename=history_path_g)
+
+            gen_scheduler.step()
+            dis_scheduler.step()
 
             #######################################
             # (6) Plotting
             #######################################
-            ## Loss
-            plot_iters.extend(train_info[0])
-            plot_base_losses.extend(train_info[1])
-            plot_gan_losses.extend(train_info[2])
-            plot_total_losses.extend(train_info[3])
-            plt.plot(plot_iters, plot_total_losses, 'r', label='Total loss')
-            plt.plot(plot_iters, plot_gan_losses, 'g', label='GAN loss')
-            plt.plot(plot_iters, plot_base_losses, 'b', label='Base loss')
-            plt.legend(loc='upper right')   
-            plt.xlabel('Iterations')
-            plt.ylabel('Losses')
-            plt.grid()
-            plt.savefig(join(saveDirName, 'losses.png'))
-            plt.clf()
-            plt.cla()
-
-            ## Scores
+            plot_iters.extend(list(map(lambda x: epoch*len(train_loader)+x, train_losses[0])))
+            plot_total_losses.extend(train_losses[1])
+            plot_gan_losses.extend(train_losses[2])
+            plot_base_losses.extend(train_losses[3])
             plot_epochs.append(epoch+1)
             plot_val_scores.append(val_score.item())
-            plt.plot(plot_epochs, plot_val_scores, 'r')
-            # plt.xticks(np.arange(0, 50,step=2))
-            plt.xlabel('Epochs')
-            plt.yticks(np.arange(10,35,step=5))
-            plt.ylabel('Validation scores')
-            plt.grid()
-            plt.savefig(join(saveDirName, 'scores.png'))
-            plt.clf()
-            plt.cla()
-            with open(join(saveDirName, 'scores.json'), 'w') as fp:
-                json.dump([plot_epochs, plot_val_scores], fp)
+            ## Loss
+            plot_losses(plot_iters, [plot_total_losses, plot_base_losses, plot_gan_losses], os.path.join(saveDirName, 'losses.jpg'))
+
+            ## Scores
+            plot_scores(plot_epochs, plot_val_scores, os.path.join(saveDirName, 'scores.jpg'))
 
     else :  # test mode (if epoch = 0, the image format is png)
         epoch = checkpoint['epoch']
@@ -292,6 +149,8 @@ def parse_args():
     parser.add_argument('--save-dir', default=None, required=True) #
     parser.add_argument('--crop-size', default=0, type=int) #
     parser.add_argument('--step', type=int, default=200) #
+    parser.add_argument('--ssim_weight', type=float, default=0) #
+    parser.add_argument('--perc_weight', type=float, default=0) #
     parser.add_argument('--gan_weight', type=float, default=0) #
     parser.add_argument('--batch-size', type=int, default=1, metavar='N', #
                         help='input batch size for training (default: 64)') #

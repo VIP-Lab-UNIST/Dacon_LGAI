@@ -18,17 +18,21 @@ from lib.utils.util import create_window, _ssim
 
 
 class LossFunction(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, weight_ssim, weight_perc):
         super(LossFunction, self).__init__()
         vgg_model = vgg16(pretrained=True).features
         vgg_model = vgg_model.cuda()
         for param in vgg_model.parameters():
             param.requires_grad = False
-        self.vgg_module = VGG(vgg_model)
         self.ssim_module = SSIM()
+        self.weight_ssim = weight_ssim
+        self.vgg_module = VGG(vgg_model)
+        self.weight_perc = weight_perc
+
 
     def forward(self, out_img, gt_img):
-        mse_loss = F.mse_loss(out_img, gt_img)
+        sm_l1_loss = F.smooth_l1_loss(out_img, gt_img)
+        # mse_loss = F.mse_loss(out_img, gt_img)
         ssim_loss = self.ssim_module(out_img, gt_img)
         p_loss = []
         inp_features, pv = self.vgg_module(out_img)
@@ -37,7 +41,8 @@ class LossFunction(torch.nn.Module):
             p_loss.append(F.mse_loss(inp_features[i],gt_features[i]))
         perc_loss = sum(p_loss)/len(p_loss)
 
-        return mse_loss + ssim_loss + 0.01 * perc_loss
+        return sm_l1_loss + self.weight_ssim*ssim_loss + self.weight_perc*perc_loss
+        # return mse_loss + ssim_loss + 0.01 * perc_loss
 
 class SSIM(torch.nn.Module):
     def __init__(self, window_size = 11, size_average = True):
@@ -62,9 +67,7 @@ class SSIM(torch.nn.Module):
             self.window = window
             self.channel = channel
 
-
         return (1 - _ssim(img1, img2, window, self.window_size, channel, self.size_average))
-
 
 class GANLoss(nn.Module):
     def __init__(self, use_lsgan=True, target_real_label=1.0, target_fake_label=0.0):
