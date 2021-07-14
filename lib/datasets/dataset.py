@@ -30,12 +30,7 @@ class RestList(torch.utils.data.Dataset):
 
         data = [image]
 
-        if self.phase == 'train':
-            gt = cv2.imread(join(self.data_dir, self.gt_list[index]))
-            gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
-            mask = cv2.imread(join(self.data_dir, self.mask_list[index]), cv2.IMREAD_GRAYSCALE)[:,:,np.newaxis]
-            data.extend([gt, mask])
-        elif self.phase == 'val':
+        if (self.phase == 'train') or (self.phase == 'val'):
             gt = cv2.imread(join(self.data_dir, self.gt_list[index]))
             gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
             data.append(gt)
@@ -55,16 +50,13 @@ class RestList(torch.utils.data.Dataset):
 
     def _make_list(self, out_name):
         if self.phase=='train': 
-            self.image_list = sorted(glob(join(self.data_dir, 'train_256/*.png')))
-            self.gt_list = sorted(glob(join(self.data_dir, 'train_gt_256/*.png')))
-            self.mask_list = sorted(glob(join(self.data_dir, 'train_256_mask/*.png')))
+            self.image_list = sorted(glob(join(self.data_dir, 'train_input_512/*.png')))
+            self.gt_list = sorted(glob(join(self.data_dir, 'train_label_512/*.png')))
             assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
         elif self.phase=='val' : 
-            self.image_list = sorted(glob(join(self.data_dir, 'valid_input_img/*.png')))
-            self.gt_list = sorted(glob(join(self.data_dir, 'valid_label_img/*.png')))
+            self.image_list = sorted(glob(join(self.data_dir, 'valid_input/*.png')))
+            self.gt_list = sorted(glob(join(self.data_dir, 'valid_label/*.png')))
             assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
         else:
-            self.image_list = sorted(glob(join(self.data_dir, 'test_input_img/*.png')))
-            self.gt_list = sorted(glob(join(self.data_dir, 'test_input_img/*.png')))
-            assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
+            self.image_list = sorted(glob(join(self.data_dir, 'test_input/*.png')))
         

@@ -63,31 +63,36 @@ def train(train_loader, models, optims, criterions, gan_weight, epoch, eval_scor
     base_losses = []
     gan_losses = []
     total_losses = []
-    for i, (inp, label, mask) in enumerate(tqdm(train_loader, desc="Training iteration")):
+    kernel_size = 21
+    max_pool = nn.MaxPool2d(kernel_size, stride =1, padding=(kernel_size-1)//2)
+    for i, (inputs, gts) in enumerate(tqdm(train_loader, desc="Training iteration")):
         data_time.update(time.time() - end)
 
         ## loading image pairs
-        img = inp.float().cuda()
-        gt = label.float().cuda()
-        # mask = mask.bool().cuda()
-        mask = torch.ones(img.shape).cuda()
+        inputs = inputs.float().cuda()
+        gts = gts.float().cuda()
+        masks = torch.where(inputs.mean(axis=1, keepdim=True) > 0.9, torch.tensor([1.]).cuda(), torch.zeros([1]).cuda())
+        for _ in range(6):
+            masks = max_pool(masks)
+        # inverse mask
+        # masks = torch.abs(masks - 1.)
 
         ## feed-forward the data into network
-        out = model(img*mask)        
+        outs = model(inputs)        
         optim.zero_grad()
         dis_optim.zero_grad()
         
         ## Calculate the loss
         ## Base loss
-        loss = criterion(out*mask, gt*mask)
+        loss = criterion(outs, gts)
+        # loss = criterion(outs*masks, gts*masks) + criterion(outs, gts)
+        
         ## GAN loss
-        # Discriminator loss
-        dis_loss = dis_criterion(gt*mask, target_is_real=True) + dis_criterion(dis_model(out.detach()*mask), target_is_real=False)
-        # Generator loss
-        gen_loss = dis_criterion(dis_model(out*mask), target_is_real=True)
+        dis_loss = dis_criterion(gts*masks, target_is_real=True) + dis_criterion(dis_model(outs.detach()*masks), target_is_real=False)
+        gen_loss = dis_criterion(dis_model(outs*masks), target_is_real=True)
         ## Total loss
         total_loss = loss+gan_weight*(dis_loss+gen_loss)
-        losses.update(total_loss.data, inp.size(0))
+        losses.update(total_loss.data, inputs.size(0))
         
         ## backward and update the network
         total_loss.backward()
@@ -96,9 +101,6 @@ def train(train_loader, models, optims, criterions, gan_weight, epoch, eval_scor
 
         batch_time.update(time.time() - end)
         end = time.time()
-
-        # if i % print_freq == 0:
-        #     logger.info('E : [{0}][{1}/{2}]'.format(epoch, i, len(train_loader)))
 
         iters.append(epoch*len(train_loader)+i)
         base_losses.append(loss.item())
@@ -165,6 +167,7 @@ def run(args, saveDirName='.', logger=None):
     #             transforms.ToTensor()]
     
     t_super= [transforms.RandomCrop(crop_size),
+                transforms.RandomFlip(),
                 transforms.ToTensor()]
 
     train_loader = torch.utils.data.DataLoader(
@@ -242,19 +245,6 @@ def run(args, saveDirName='.', logger=None):
                 'gen_optim': gen_optim.state_dict(),
                 'dis_optim': dis_optim.state_dict(),
             }, True, filename=history_path_g)
-
-            # if best_prec1 < val_score : 
-            #     best_prec1 = val_score
-            #     # checkpoint for g
-            #     # history_path_g = saveDirName + '/' + 'checkpoint_{:03d}_'.format(epoch + 1) + str(best_prec1)[:6] + '.tar'
-            #     history_path_g = join(saveDirName, 'checkpoint_{:03d}'.format(epoch + 1)+'.tar')
-            #     save_checkpoint({
-            #         'epoch': epoch + 1,
-            #         'gen': gen.state_dict(),
-            #         'dis': dis.state_dict(),
-            #         'gen_optim': gen_optim.state_dict(),
-            #         'dis_optim': dis_optim.state_dict(),
-            #     }, True, filename=history_path_g)
 
             #######################################
             # (6) Plotting
