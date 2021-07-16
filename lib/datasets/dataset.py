@@ -43,7 +43,6 @@ class RestList(torch.utils.data.Dataset):
             image_up = image[0:2432,:,:]
             image_down = image[16:2448,:,:]
             data.extend([image_up, image_down, image])
-            pass
 
         data = tuple(data)
         data = (self.transform(*data))

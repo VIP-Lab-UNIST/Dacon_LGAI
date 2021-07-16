@@ -4,7 +4,7 @@ import torch
 from tqdm import tqdm
 from lib.utils.util import save_output_images, save_checkpoint, psnr, AverageMeter
 
-def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, epoch=None, logger=None):
+def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, epoch=None, logger=None, phase=None):
 
     #######################################
     # (1) Initialize    
@@ -38,7 +38,7 @@ def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, ep
         end = time.time()
         if save_vis == True:
             save_dir = os.path.join(output_dir, 'epoch_{:04d}'.format(epoch))
-            save_output_images(out, str(epoch), name, save_dir, epoch)
+            save_output_images(out, str(epoch), name, save_dir, epoch, phase)
         
     if logger is not None:
         logger.info('E : [{0}]'.format(epoch))

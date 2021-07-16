@@ -76,14 +76,20 @@ def adjust_learning_rate(args, epoch, optimizer, lr):
         param_group['lr'] = lr
     return lr
 
-def save_output_images(predictions, pre, pathes, output_dir, epoch):
+def save_output_images(predictions, pre, pathes, output_dir, epoch, phase):
     """
     Saves a given (B x C x H x W) into an image file.
     If given a mini-batch tensor, will save the tensor as a grid of images.
     """
     for ind in range(len(pathes)):
         os.makedirs(output_dir, exist_ok=True)
-        fn = os.path.join(output_dir, pathes[ind].split('/')[-1].replace('.png', '.jpg'))
+        if phase == 'val':
+            fn = os.path.join(output_dir, pathes[ind].split('/')[-1].replace('.png', '.jpg'))
+        elif phase == 'test':
+            fn = os.path.join(output_dir, pathes[ind].split('/')[-1])
+        else:
+            raise ValueError('No such phase,')
+
         save_image(predictions[ind], fn)
         
 def gaussian(window_size, sigma):

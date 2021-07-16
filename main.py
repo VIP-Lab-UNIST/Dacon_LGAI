@@ -74,8 +74,12 @@ def run(args, saveDirName='.', logger=None):
         start_epoch = state['epoch']
         gen.load_state_dict(state['gen'])
         gen_optim.load_state_dict(state['gen_optim'])
+        gen_scheduler.load_state_dict(state['gen_scheduler'])
+
         dis.load_state_dict(state['dis'])
         dis_optim.load_state_dict(state['dis_optim'])
+        dis_scheduler.load_state_dict(state['dis_scheduler'])
+        print('Complete the resume')
     else:
         start_epoch = 0
 
@@ -105,7 +109,7 @@ def run(args, saveDirName='.', logger=None):
             ## train the network
             train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], args.gan_weight, eval_score=psnr, logger=logger)        
             ## validate the network
-            val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger)
+            val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger, phase='val')
 
             ## save the neural network
             history_path_g = os.path.join(saveDirName, 'checkpoint_{:03d}'.format(epoch + 1)+'.tar')
@@ -138,8 +142,7 @@ def run(args, saveDirName='.', logger=None):
             plot_scores(plot_epochs, plot_val_scores, os.path.join(saveDirName, 'scores.jpg'))
 
     else :  # test mode (if epoch = 0, the image format is png)
-        epoch = checkpoint['epoch']
-        val_score = validate(test_loader, gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=epoch, logger=logger)
+        val_score = validate(test_loader, gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
 
 def parse_args():
     # Training settings
