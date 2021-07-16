@@ -16,9 +16,8 @@ from torchvision.models import vgg16
 
 from lib.utils.util import create_window, _ssim
 
-
 class LossFunction(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, ssim_weight, perc_weight):
         super(LossFunction, self).__init__()
         vgg_model = vgg16(pretrained=True).features
         vgg_model = vgg_model.cuda()
@@ -26,6 +25,8 @@ class LossFunction(torch.nn.Module):
             param.requires_grad = False
         self.vgg_module = VGG(vgg_model)
         self.ssim_module = SSIM()
+        self.ssim_weight = ssim_weight
+        self.perc_weight = perc_weight
 
     def forward(self, out_img, gt_img):
         mse_loss = F.mse_loss(out_img, gt_img)
@@ -37,7 +38,7 @@ class LossFunction(torch.nn.Module):
             p_loss.append(F.mse_loss(inp_features[i],gt_features[i]))
         perc_loss = sum(p_loss)/len(p_loss)
 
-        return mse_loss + ssim_loss + 0.01 * perc_loss
+        return mse_loss + self.ssim_weight*ssim_loss + self.perc_weight*perc_loss
 
 class SSIM(torch.nn.Module):
     def __init__(self, window_size = 11, size_average = True):

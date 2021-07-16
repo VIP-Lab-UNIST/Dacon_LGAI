@@ -3,10 +3,14 @@ import threading
 import numpy as np
 import shutil
 import math
+import json
 # from math import log10, exp
 from PIL import Image
 from datetime import datetime
 import logging
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.functional as F
@@ -14,11 +18,11 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torchvision.models as models
 from torchvision.models import vgg16
+from torchvision.utils import save_image
 
 
 class MeanShift(nn.Conv2d):
-    def __init__(self, rgb_range, rgb_mean=(0.4488, 0.4371, 0.4040), rgb_std=(1.0, 1.0, 1.0), \
-            sign=-1):
+    def __init__(self, rgb_range, rgb_mean=(0.4488, 0.4371, 0.4040), rgb_std=(1.0, 1.0, 1.0), sign=-1):
         super(MeanShift, self).__init__(3, 3, kernel_size=1)
         std = torch.Tensor(rgb_std)
         self.weight_data = torch.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
@@ -72,33 +76,22 @@ def adjust_learning_rate(args, epoch, optimizer, lr):
         param_group['lr'] = lr
     return lr
 
-def save_output_images(predictions, pre, filenames, output_dir, epoch):
+def save_output_images(predictions, pre, pathes, output_dir, epoch, phase):
     """
     Saves a given (B x C x H x W) into an image file.
     If given a mini-batch tensor, will save the tensor as a grid of images.
     """
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # pdb.set_trace()
-    for ind in range(len(filenames)):
-        #print(predictions[ind].shape)
-        im = Image.fromarray(np.transpose(predictions[ind], (1, 2, 0)).astype(np.uint8))
-        #fn = output_dir + filenames[ind][:-4] + '.png'
-        if epoch > 0 :
-            # fn = os.path.join(output_dir, filenames[ind][:-4] + pre + '.jpg')
-            fn = os.path.join(output_dir, filenames[ind].split('/')[-1][:-4] + '_' + pre + '.jpg')
-            out_dir = os.path.split(fn)[0]
-            if not os.path.exists(out_dir):
-                os.makedirs(out_dir)
-            im.save(fn, quality=100)
-        else :
-            # fn = os.path.join(output_dir, filenames[ind][:-4] + pre + '.png')
-            fn = os.path.join(output_dir, filenames[ind].split('/')[-1][:-4] + '_' + pre + '.png')
-            out_dir = os.path.split(fn)[0]
-            if not os.path.exists(out_dir):
-                os.makedirs(out_dir)
-            im.save(fn)
+    for ind in range(len(pathes)):
+        os.makedirs(output_dir, exist_ok=True)
+        if phase == 'val':
+            fn = os.path.join(output_dir, pathes[ind].split('/')[-1].replace('.png', '.jpg'))
+        elif phase == 'test':
+            fn = os.path.join(output_dir, pathes[ind].split('/')[-1])
+        else:
+            raise ValueError('No such phase,')
 
+        save_image(predictions[ind], fn)
+        
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([math.exp(-(x - window_size//2)**2/float(2*sigma**2)) for x in range(window_size)])
     return gauss/gauss.sum()
@@ -151,3 +144,42 @@ def Gaussiansmoothing(img, channel=3, window_size = 11):
     x_smooth = F.conv2d(img, window, padding = window_size//2, groups = channel)
     
     return x_smooth, img - x_smooth
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
+
+def plot_losses(iters, losses, path):
+    plt.plot(iters, losses[0], 'r', label='Total loss')
+    plt.plot(iters, losses[1], 'b', label='Base loss')
+    plt.plot(iters, losses[2], 'g', label='GAN loss')
+    plt.legend(loc='upper right')   
+    plt.xlabel('Iterations')
+    plt.ylabel('Losses')
+    plt.grid()
+    plt.savefig(path)
+    plt.clf()
+    plt.cla()
+
+def plot_scores(epochs, scores, path):
+    plt.plot(epochs, scores, 'r')
+    plt.xlabel('Epochs')
+    plt.yticks(np.arange(10,35,step=5))
+    plt.ylabel('Scores')
+    plt.grid()
+    plt.savefig(path)
+    plt.clf()
+    plt.cla()
+    with open(path.replace('.jpg', '.json'), 'w') as fp:
+        json.dump([epochs, scores], fp)
+
+def plot_lrs(epochs, lrs, path):
+    plt.plot(epochs, lrs[0], 'r', label='Generator')
+    plt.plot(epochs, lrs[1], 'b', label='Discriminator')
+    plt.legend(loc='upper right')   
+    plt.xlabel('Epochs')
+    plt.ylabel('lrs')
+    plt.grid()
+    plt.savefig(path)
+    plt.clf()
+    plt.cla()

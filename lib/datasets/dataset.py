@@ -24,7 +24,6 @@ class RestList(torch.utils.data.Dataset):
     def __getitem__(self, index):
         np.random.seed()
         random.seed()
-
         image = cv2.imread(join(self.data_dir, self.image_list[index]))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -47,7 +46,13 @@ class RestList(torch.utils.data.Dataset):
         return len(self.image_list)
 
     def _make_list(self, out_name):
-        self.image_list = sorted(glob(join(self.data_dir, self.phase+'_256/*.png')))
-        if self.phase=='train' or self.phase=='val' : 
-            self.gt_list = sorted(glob(join(self.data_dir, self.phase+'_gt_256/*.png')))
+        if self.phase=='train': 
+            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/256_cropped/train_256/*.png'))
+            self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/256_cropped/train_gt_256/*.png'))
             assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
+        elif self.phase=='val' : 
+            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_input/*.png'))
+            self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_label/*.png'))
+            assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
+        else:
+            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/test_input/*.png'))
