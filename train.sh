@@ -6,8 +6,8 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py train \
                                 --data-dir ../Datasets \
                                 --ssim_weight 0.2 \
                                 --perc_weight 0.001 \
-                                --gan_weight 0.005 \
-                                --save-dir ./logs/train/baseline/lr/CosineAnnealingWarmRestarts/
-
+                                --gan_weight 0.5 \
+                                --save-dir ./logs/train/baseline/deep_discriminator/
                                 # --save-dir ./logs/tmp/
+
                                 # --save-dir ./logs/train/basline/

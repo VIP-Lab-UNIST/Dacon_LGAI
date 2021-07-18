@@ -13,8 +13,9 @@ import lib.datasets.transforms as transforms
 from run.train import train
 from run.test import validate
 from lib.datasets.dataset import RestList
-from models.network import Baseline, Discriminator
+from models.network import Baseline, Discriminator, Deep_Discriminator
 from models.loss import LossFunction, GANLoss
+from models.optimizer import CosineAnnealingWarmUpRestarts
 from lib.utils.util import save_output_images, save_checkpoint, psnr, plot_losses, plot_scores, plot_lrs
 
 def run(args, saveDirName='.', logger=None):
@@ -61,16 +62,21 @@ def run(args, saveDirName='.', logger=None):
 
     gen = Baseline()
     gen = torch.nn.DataParallel(gen).cuda()
+    # gen_optim = torch.optim.SGD(gen.parameters(), lr=args.lr, momentum=0.9)
     gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
-    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
-    # gen_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=30, T_mult=1, eta_min=0.001)
+
+    # gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
+    gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
     # gen_scheduler = optim.lr_scheduler.ReduceLROnPlateau(gen_optim)
 
     dis = Discriminator()
+    # dis = Deep_Discriminator()
     dis = torch.nn.DataParallel(dis).cuda()
+    # dis_optim = torch.optim.SGD(dis.parameters(), lr=args.lr, momentum=0.9)
     dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
+
     dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[30, 50, 60], gamma=0.5)
-    # dis_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(dis_optim, T_0=30, T_mult=1, eta_min=0.001)
+    # dis_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(dis_optim, T_0=20, T_mult=1, eta_min=0.00001)
     # dis_scheduler = optim.lr_scheduler.ReduceLROnPlateau(dis_optim)
     
     if args.resume is not None:
@@ -100,7 +106,6 @@ def run(args, saveDirName='.', logger=None):
 
     cudnn.benchmark = True
     best_prec1 = 0
-    lr = args.lr
     plot_val_scores = []
     plot_epochs = []
     plot_iters =  []
@@ -111,7 +116,7 @@ def run(args, saveDirName='.', logger=None):
     plot_lrs_gen = []
     if args.cmd == 'train' : # train mode
         for epoch in range(start_epoch, args.epochs):
-            logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, lr))
+            logger.info('Epoch: [{0}]\t Gen lr {1:.06f}\t Dis lr {1:.06f}'.format(epoch, gen_optim.param_groups[0]['lr'], dis_optim.param_groups[0]['lr']))
             ## train the network
             train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], args.gan_weight, eval_score=psnr, logger=logger)        
             ## validate the network

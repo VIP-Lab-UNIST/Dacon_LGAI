@@ -148,7 +148,7 @@ class Discriminator(nn.Module):
 
 class Deep_Discriminator(nn.Module):
     def __init__(self):
-        super(Discriminator, self).__init__()
+        super(Deep_Discriminator, self).__init__()
         self.net = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
             nn.LeakyReLU(0.2),
