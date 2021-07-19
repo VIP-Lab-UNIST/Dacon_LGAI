@@ -13,7 +13,7 @@ import lib.datasets.transforms as transforms
 from run.train import train
 from run.test import validate
 from lib.datasets.dataset import RestList
-from models.network import Baseline, Discriminator, Deep_Discriminator
+from models.network import Baseline, Discriminator
 from models.loss import LossFunction, GANLoss
 from models.optimizer import CosineAnnealingWarmUpRestarts
 from lib.utils.util import save_output_images, save_checkpoint, psnr, plot_losses, plot_scores, plot_lrs
@@ -62,18 +62,17 @@ def run(args, saveDirName='.', logger=None):
 
     gen = Baseline()
     gen = torch.nn.DataParallel(gen).cuda()
-    # gen_optim = torch.optim.SGD(gen.parameters(), lr=args.lr, momentum=0.9)
     gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
+    # gen_optim = torch.optim.SGD(gen.parameters(), lr=args.lr, momentum=0.9)
 
-    # gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
-    gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
+    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
+    # gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
     # gen_scheduler = optim.lr_scheduler.ReduceLROnPlateau(gen_optim)
 
     dis = Discriminator()
-    # dis = Deep_Discriminator()
     dis = torch.nn.DataParallel(dis).cuda()
-    # dis_optim = torch.optim.SGD(dis.parameters(), lr=args.lr, momentum=0.9)
     dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
+    # dis_optim = torch.optim.SGD(dis.parameters(), lr=args.lr, momentum=0.9)
 
     dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[30, 50, 60], gamma=0.5)
     # dis_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(dis_optim, T_0=20, T_mult=1, eta_min=0.00001)

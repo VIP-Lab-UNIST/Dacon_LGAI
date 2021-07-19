@@ -1,7 +1,9 @@
 import os
 import time
+import torch.nn.functional as F
 from tqdm import tqdm
 from lib.utils.util import AverageMeter
+
 
 def train(train_loader, models, optims, criterions, gan_weight, eval_score=None, print_freq=10, logger=None):
     
@@ -40,20 +42,41 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
         ## loading image pairs
         inputs = inputs.float().cuda()
         gts = gts.float().cuda()
-
+        gts2 = F.interpolate(gts, scale_factor=0.5)
+        gts3 = F.interpolate(gts2, scale_factor=0.5)
+        gts4 = F.interpolate(gts3, scale_factor=0.5)
+        
         ## feed-forward the data into network
-        outs = model(inputs)        
+        outs, outs2, outs3, outs4 = model(inputs)        
+        
         optim.zero_grad()
         dis_optim.zero_grad()
         
         ## Calculate the loss
         ## Base loss
         loss = criterion(outs, gts)
+        loss2 = criterion(outs2, gts2)
+        loss3 = criterion(outs3, gts3)
+        loss4 = criterion(outs4, gts4)
+        base_loss = loss + loss2 + loss3 + loss4
+
         ## GAN loss
         dis_loss = dis_criterion(gts, target_is_real=True) + dis_criterion(dis_model(outs.detach()), target_is_real=False)
         gen_loss = dis_criterion(dis_model(outs), target_is_real=True)
+
+        dis_loss2 = dis_criterion(gts2, target_is_real=True) + dis_criterion(dis_model(outs2.detach()), target_is_real=False)
+        gen_loss2 = dis_criterion(dis_model(outs2), target_is_real=True)
+
+        dis_loss3 = dis_criterion(gts3, target_is_real=True) + dis_criterion(dis_model(outs3.detach()), target_is_real=False)
+        gen_loss3 = dis_criterion(dis_model(outs3), target_is_real=True)
+
+        dis_loss4 = dis_criterion(gts4, target_is_real=True) + dis_criterion(dis_model(outs4.detach()), target_is_real=False)
+        gen_loss4 = dis_criterion(dis_model(outs4), target_is_real=True)
+
+        gan_loss = (dis_loss+gen_loss) + (dis_loss2+gen_loss2) + (dis_loss3+gen_loss3) + (dis_loss4+gen_loss4)
+        
         ## Total loss
-        total_loss = loss+gan_weight*(dis_loss+gen_loss)
+        total_loss = base_loss + gan_weight*gan_loss
         losses.update(total_loss.data, inputs.size(0))
         
         ## backward and update the network
@@ -65,8 +88,8 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
         end = time.time()
 
         iters.append(i)
-        base_losses.append(loss.item())
-        gan_losses.append((dis_loss+gen_loss).item())
+        base_losses.append(base_loss.item())
+        gan_losses.append(gan_loss.item())
         total_losses.append(total_loss.item())
 
     return [iters, total_losses, gan_losses, base_losses]

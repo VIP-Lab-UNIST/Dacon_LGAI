@@ -5,9 +5,9 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py train \
                                 --lr 1e-4 \
                                 --data-dir ../Datasets \
                                 --ssim_weight 0.2 \
-                                --perc_weight 0.001 \
-                                --gan_weight 0.5 \
-                                --save-dir ./logs/train/baseline/deep_discriminator/
+                                --perc_weight 0.01 \
+                                --gan_weight 0. \
+                                --save-dir ./logs/train/multiscale/instance_norm
                                 # --save-dir ./logs/tmp/
 
                                 # --save-dir ./logs/train/basline/

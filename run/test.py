@@ -23,7 +23,8 @@ def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, ep
         img = img.float().cuda()
         gt = gt.float()
         with torch.no_grad():
-            out = model(img).cpu()
+            out, _, _, _ = model(img)
+        out = out.cpu()
 
         # evaluation
         score.update(psnr(out, gt, 1.), out.size(0))
