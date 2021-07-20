@@ -11,11 +11,12 @@ class VanilaModule(nn.Module):
     def __init__(self, in_channels, growth_rate, kernel_size=3):
         super(VanilaModule, self).__init__()
         self.conv = ConvLayer(in_channels, growth_rate, stride=1, kernel_size=3)
-        self.innorm =  nn.InstanceNorm2d(growth_rate)
+        # self.innorm =  nn.InstanceNorm2d(growth_rate)
         self.act = torch.nn.PReLU()
 
     def forward(self, x):
-        out = self.act(self.innorm(self.conv(x)))
+        out = self.act(self.conv(x))
+        # out = self.act(self.innorm(self.conv(x)))
         out = torch.cat((x,out), dim=1)
         return out
 

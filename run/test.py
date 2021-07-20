@@ -1,6 +1,9 @@
 import os
 import time
 import torch
+import zipfile
+from os.path import basename
+from glob import glob
 from tqdm import tqdm
 from lib.utils.util import save_output_images, save_checkpoint, psnr, AverageMeter
 
@@ -34,6 +37,14 @@ def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, ep
         if save_vis == True:
             save_dir = os.path.join(output_dir, 'epoch_{:04d}'.format(epoch))
             save_output_images(out, str(epoch), name, save_dir, epoch, phase)
+
+        if phase == 'test':
+            files = glob(os.path.join(save_dir, '*.png'), recursive=True)
+            zip_file = os.path.join(save_dir, 'output.zip')
+            fantasy_zip = zipfile.ZipFile(zip_file, 'w')
+            for img in files:
+                fantasy_zip.write(img, basename(img).replace('_input', ''))
+            fantasy_zip.close()
         
     if logger is not None:
         logger.info('E : [{0}]'.format(epoch))
