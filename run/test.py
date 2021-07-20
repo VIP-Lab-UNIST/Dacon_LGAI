@@ -26,8 +26,10 @@ def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, ep
         if (name[0] == 'train_input_10330.png') or (name[0] == 'train_input_10363.png') or (name[0] == 'train_input_10570.png'):
             continue
         with torch.no_grad():
-            out_up = model(img_up).cpu()
-            out_down = model(img_down).cpu()
+            out_up, _, _, _, _ = model(img_up)
+            out_up = out_up.cpu()
+            out_down, _, _, _, _  = model(img_down)
+            out_down = out_down.cpu()
 
         out = (torch.cat([out_up[:, :, 0:1224, :].permute(0, 2, 3, 1), out_down[:, :, 1208:, :].permute(0, 2, 3, 1)],1)).permute(0, 3, 1, 2)
 

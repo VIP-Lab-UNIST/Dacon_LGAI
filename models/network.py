@@ -202,29 +202,38 @@ class knowledge_adaptation_UNet(nn.Module):
         self.up_block= nn.PixelShuffle(2)
         self.attention0 = CP_Attention_block(default_conv, 1024, 3)
         self.attention1 = CP_Attention_block(default_conv, 256, 3)
+        self.out1 = nn.Conv2d(256, 3, kernel_size=1, padding=0)
         self.attention2 = CP_Attention_block(default_conv, 192, 3)
+        self.out2 = nn.Conv2d(192, 3, kernel_size=1, padding=0)
         self.attention3 = CP_Attention_block(default_conv, 112, 3)
+        self.out3 = nn.Conv2d(112, 3, kernel_size=1, padding=0)
         self.attention4 = CP_Attention_block(default_conv, 44, 3)
+        self.out4 = nn.Conv2d(44, 3, kernel_size=1, padding=0)
         self.conv_process_1 = nn.Conv2d(44, 44, kernel_size=3,padding=1)
         self.conv_process_2 = nn.Conv2d(44, 28, kernel_size=3,padding=1)
         self.tail = nn.Sequential(nn.ReflectionPad2d(3), nn.Conv2d(28, 3, kernel_size=7, padding=0), nn.Tanh())
+    
     def forward(self, input):
         x_inital, x_layer1, x_layer2, x_output = self.encoder(input)
         x_mid = self.attention0(x_output)
         x = self.up_block(x_mid)
         x = self.attention1(x)
+        RGBout1 = self.out1(x)
         x = torch.cat((x, x_layer2), 1)
         x = self.up_block(x)
         x = self.attention2(x)
+        RGBout2 = self.out2(x)
         x = torch.cat((x, x_layer1), 1)
         x = self.up_block(x)
         x = self.attention3(x)
+        RGBout3 = self.out3(x)
         x = torch.cat((x, x_inital), 1)
         x = self.up_block(x)
         x = self.attention4(x)
+        RGBout4 = self.out4(x)
         x=self.conv_process_1(x)
         out=self.conv_process_2(x)
-        return out
+        return [out, RGBout4, RGBout3, RGBout2, RGBout1]
 
 class DWT_transform(nn.Module):
     def __init__(self, in_channels,out_channels):
@@ -313,9 +322,13 @@ class dwt_UNet(nn.Module):
         self.dlayer6 = dlayer6
         self.dlayer5 = dlayer5
         self.dlayer4 = dlayer4
+        self.out4 = nn.Conv2d(64, 3, kernel_size=1, padding=0)
         self.dlayer3 = dlayer3
+        self.out3 = nn.Conv2d(32, 3, kernel_size=1, padding=0)
         self.dlayer2 = dlayer2
+        self.out2 = nn.Conv2d(16, 3, kernel_size=1, padding=0)
         self.dlayer1 = dlayer1
+        self.out1 = nn.Conv2d(32, 3, kernel_size=1, padding=0)
         self.tail_conv1 = nn.Conv2d(48, 32, 3, padding=1, bias=True)
         self.bn2=nn.BatchNorm2d(32)
         self.tail_conv2 = nn.Conv2d(nf*2, output_nc, 3,padding=1, bias=True)
@@ -348,19 +361,28 @@ class dwt_UNet(nn.Module):
 
         Tout6_out5 = torch.cat([dout6, out5, dwt_high_4], 1)
         Tout5 = self.dlayer5(Tout6_out5)
+
         Tout5_out4 = torch.cat([Tout5, out4,dwt_high_3], 1)
         Tout4 = self.dlayer4(Tout5_out4)
+        RGBout4 = self.out4(Tout4)
+
         Tout4_out3 = torch.cat([Tout4, out3,dwt_high_2], 1)
         Tout3 = self.dlayer3(Tout4_out3)
+        RGBout3 = self.out3(Tout3)
+
         Tout3_out2 = torch.cat([Tout3, out2,dwt_high_1], 1)
         Tout2 = self.dlayer2(Tout3_out2)
+        RGBout2 = self.out2(Tout2)
+
         Tout2_out1 = torch.cat([Tout2, out1,dwt_high_0], 1)
         Tout1 = self.dlayer1(Tout2_out1)
+        RGBout1 = self.out1(Tout1)
+
         Tout1_outinit = torch.cat([Tout1, conv_start], 1)
         tail1=self.tail_conv1(Tout1_outinit)
         tail2=self.bn2(tail1)
         dout1 = self.tail_conv2(tail2)
-        return dout1
+        return [dout1, RGBout1, RGBout2, RGBout3, RGBout4]
 
 class fusion_net(nn.Module):
     def __init__(self):
@@ -371,9 +393,12 @@ class fusion_net(nn.Module):
     def forward(self, input):
         dwt_branch=self.dwt_branch(input)
         knowledge_adaptation_branch=self.knowledge_adaptation_branch(input)
-        x = torch.cat([dwt_branch, knowledge_adaptation_branch], 1)
+        x = torch.cat([dwt_branch[0], knowledge_adaptation_branch[0]], 1)
         x = self.fusion(x)
-        return x
+        return x, [dwt_branch[1], knowledge_adaptation_branch[1]], \
+        [dwt_branch[2], knowledge_adaptation_branch[2]], \
+        [dwt_branch[3], knowledge_adaptation_branch[3]], \
+        [dwt_branch[4], knowledge_adaptation_branch[4]]
 
 class Discriminator(nn.Module):
     def __init__(self):

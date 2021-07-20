@@ -62,12 +62,12 @@ def run(args, saveDirName='.', logger=None):
     gen = fusion_net()
     gen = torch.nn.DataParallel(gen).cuda()
     gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
-    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[3000, 5000, 6000], gamma=0.5)
+    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
 
     dis = Discriminator()
     dis = torch.nn.DataParallel(dis).cuda()
     dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
-    dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[3000, 5000, 6000], gamma=0.5)
+    dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[30, 50, 60], gamma=0.5)
     
     if args.resume is not None:
         state = torch.load(args.resume)
