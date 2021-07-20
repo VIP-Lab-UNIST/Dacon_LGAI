@@ -1,192 +1,143 @@
-import time
-import datetime
 import torch
-from torch import nn, optim
-from torch.nn import functional as F
-import numpy as np
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn import init
+import functools
+# from deconv import FastDeconv
 
-# --- Build dense --- #
-class VanilaModule(nn.Module):
-    def __init__(self, in_channels, growth_rate, kernel_size=3):
-        super(VanilaModule, self).__init__()
-        self.conv = ConvLayer(in_channels, growth_rate, stride=1, kernel_size=3)
-        self.act = torch.nn.PReLU()
 
-    def forward(self, x):
-        out = self.act(self.conv(x))
-        out = torch.cat((x,out), dim=1)
-        return out
+def default_conv(in_channels, out_channels, kernel_size, bias=True):
+    return nn.Conv2d(in_channels, out_channels, kernel_size, padding=(kernel_size // 2), bias=bias)
 
-# --- Build the Residual Dense Block --- #
-class RDB(nn.Module):
-    def __init__(self, in_channels):
-        super(RDB, self).__init__()
-        _in_channels = in_channels
-        growth_rate = in_channels // 2
-        modules = []
-        for i in range(4):
-            modules.append(VanilaModule(_in_channels, growth_rate))
-            _in_channels += growth_rate
-        self.residual_dense_layers = nn.Sequential(*modules)
-        self.conv_1x1 = nn.Conv2d(_in_channels, in_channels, kernel_size=1, padding=0)
 
-    def forward(self, x):
-        out = self.residual_dense_layers(x)
-        out = self.conv_1x1(out)
-        out = out + x
-        return out
-
-class ConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride):
-        super(ConvLayer, self).__init__()
-        reflection_padding = kernel_size // 2
-        self.reflection_pad = nn.ReflectionPad2d(reflection_padding)
-        self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride)
-
-    def forward(self, x):
-        out = self.reflection_pad(x)
-        out = self.conv2d(out)
-        return out
-
-class ResidualBlock(torch.nn.Module):
-    def __init__(self, channels):
-        super(ResidualBlock, self).__init__()
-        self.conv1 = ConvLayer(channels, channels, kernel_size=3, stride=1)
-        self.conv2 = ConvLayer(channels, channels, kernel_size=3, stride=1)
-        self.relu = nn.PReLU()
-
-    def forward(self, x):
-        residual = x
-        out = self.relu(self.conv1(x))
-        out = self.conv2(out) * 0.1
-        out = torch.add(out, residual)
-        return out
-        
-
-class UpsampleConvLayer(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(UpsampleConvLayer, self).__init__()
-        self.reflection_pad = nn.ReflectionPad2d(1)
-        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.conv2d = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1)
-
-    def forward(self, x, y):
-        x_up = F.interpolate(x, size=(y.size(2), y.size(3)), mode='bilinear')
-        x_up = self.conv1x1(x_up)
-        out = x_up + y
-        out = self.reflection_pad(out)
-        out = self.conv2d(out)
-        return out
-
-# --- Main model  --- #
-class Baseline(nn.Module):
-    def __init__(self):
-        super(Baseline, self).__init__()
-        self.conv_e0 = ConvLayer(3, 16, kernel_size=11, stride=1) # H, W
-        self.RDB__e0 = RDB(16)
-        self.conv_e1 = ConvLayer(16, 32, kernel_size=3, stride=2) # H/2, W/2
-        self.RDB__e1 = RDB(32)
-        self.conv_e2 = ConvLayer(32, 64, kernel_size=3, stride=2) # H/4, W/4
-        self.RDB__e2 = RDB(64)
-        self.conv_e3 = ConvLayer(64, 128, kernel_size=3, stride=2) # H/8, W/8
-        self.RDB__e3 = RDB(128)
-        self.conv_e4 = ConvLayer(128, 256, kernel_size=3, stride=2) # H/16, W/16
-        self.RDB__e4 = RDB(256)
-
-        self.RDB__s1 = RDB(256)
-        self.RDB__s2 = RDB(256)
-
-        self.conv_d4 = UpsampleConvLayer(256, 128) # H/8, W/8
-        self.RDB__d4 = RDB(128)
-        self.conv_d3 = UpsampleConvLayer(128, 64) # H/4, W/4
-        self.RDB__d3 = RDB(64)
-        self.conv_d2 = UpsampleConvLayer(64, 32) # H/2, W/2
-        self.RDB__d2 = RDB(32)
-        self.conv_d1 = UpsampleConvLayer(32, 16) # H, W
-        self.RDB__d1 = RDB(16)
-        self.conv_out = ConvLayer(16, 3, kernel_size=3, stride=1)
-
-    def forward(self, x):
-        feat0 = self.RDB__e0(self.conv_e0(x))
-        feat1 = self.RDB__e1(self.conv_e1(feat0))
-        feat2 = self.RDB__e2(self.conv_e2(feat1))
-        feat3 = self.RDB__e3(self.conv_e3(feat2))
-        feat4 = self.RDB__e4(self.conv_e4(feat3))
-
-        feat = self.RDB__s1(feat4)
-        feat = self.RDB__s2(feat)
-
-        feat = self.RDB__d4(self.conv_d4(feat, feat3))
-        feat = self.RDB__d3(self.conv_d3(feat, feat2))
-        feat = self.RDB__d2(self.conv_d2(feat, feat1))
-        feat = self.RDB__d1(self.conv_d1(feat, feat0))
-        out = self.conv_out(feat)
-        return out
-
-            
-class Discriminator(nn.Module):
-    def __init__(self, in_channel=3):
-        super(Discriminator, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride = 2, padding=1)
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride = 2, padding=1)
-        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride = 2, padding=1)
-        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride = 2, padding=1)
-
-        self.bn2 = nn.BatchNorm2d(128)
-        self.bn3 = nn.BatchNorm2d(256)
-        self.bn4 = nn.BatchNorm2d(512)
-
-        self.conv1x1 = nn.Conv2d(512, 1, kernel_size=1, stride = 1, padding=0)
-
-    def forward(self, x):
-        feat1 = F.leaky_relu(self.conv1(x), negative_slope=0.2, inplace=True)
-        feat2 = F.leaky_relu(self.bn2(self.conv2(feat1)), negative_slope=0.2, inplace=True)
-        feat3 = F.leaky_relu(self.bn3(self.conv3(feat2)), negative_slope=0.2, inplace=True)
-        feat4 = F.leaky_relu(self.bn4(self.conv4(feat3)), negative_slope=0.2, inplace=True)
-        prob = self.conv1x1(feat4)
-        return prob
-
-class Deep_Discriminator(nn.Module):
-    def __init__(self):
-        super(Deep_Discriminator, self).__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(512, 512, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2),
-
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(512, 1024, kernel_size=1),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(1024, 1, kernel_size=1)
+class PALayer(nn.Module):
+    def __init__(self, channel):
+        super(PALayer, self).__init__()
+        self.pa = nn.Sequential(
+            nn.Conv2d(channel, channel // 8, 1, padding=0, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel // 8, 1, 1, padding=0, bias=True),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
-        batch_size = x.size(0)
-        return torch.sigmoid(self.net(x).view(batch_size))
+        y = self.pa(x)
+        return x * y
+
+
+class CALayer(nn.Module):
+    def __init__(self, channel):
+        super(CALayer, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.ca = nn.Sequential(
+            nn.Conv2d(channel, channel // 8, 1, padding=0, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel // 8, channel, 1, padding=0, bias=True),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        y = self.avg_pool(x)
+        y = self.ca(y)
+        return x * y
+
+
+class DehazeBlock(nn.Module):
+    def __init__(self, conv, dim, kernel_size, ):
+        super(DehazeBlock, self).__init__()
+        self.conv1 = conv(dim, dim, kernel_size, bias=True)
+        self.act1 = nn.ReLU(inplace=True)
+        self.conv2 = conv(dim, dim, kernel_size, bias=True)
+        self.calayer = CALayer(dim)
+        self.palayer = PALayer(dim)
+
+    def forward(self, x):
+        res = self.act1(self.conv1(x))
+        res = res + x
+        res = self.conv2(res)
+        res = self.calayer(res)
+        res = self.palayer(res)
+        res += x
+        return res
+
+from models.dcn_v2 import DCN
+class DCNBlock(nn.Module):
+    def __init__(self, in_channel, out_channel):
+        super(DCNBlock, self).__init__()
+        self.dcn = DCN(in_channel, out_channel, kernel_size=3, stride=1, padding=1).cuda()
+        # self.dcn = DCN(in_channel, out_channel, kernel_size=(3,3), stride=1, padding=1).cuda()
+    def forward(self, x):
+        return self.dcn(x)
+
+class Mix(nn.Module):
+    def __init__(self, m=-0.80):
+        super(Mix, self).__init__()
+        w = torch.nn.Parameter(torch.FloatTensor([m]), requires_grad=True)
+        w = torch.nn.Parameter(w, requires_grad=True)
+        self.w = w
+        self.mix_block = nn.Sigmoid()
+
+    def forward(self, fea1, fea2):
+        mix_factor = self.mix_block(self.w)
+        out = fea1 * mix_factor.expand_as(fea1) + fea2 * (1 - mix_factor.expand_as(fea2))
+        return out
+
+class Dehaze(nn.Module):
+    def __init__(self, input_nc, output_nc, ngf=64, use_dropout=False, padding_type='reflect'):
+        super(Dehaze, self).__init__()
+
+        ###### downsample
+        self.down1 = nn.Sequential(nn.ReflectionPad2d(3),
+                                   nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0),
+                                   nn.ReLU(True))
+        self.down2 = nn.Sequential(nn.Conv2d(ngf, ngf*2, kernel_size=3, stride=2, padding=1),
+                                   nn.ReLU(True))
+        self.down3 = nn.Sequential(nn.Conv2d(ngf*2, ngf*4, kernel_size=3, stride=2, padding=1),
+                                   nn.ReLU(True))
+
+        ###### FFA blocks
+        self.block = DehazeBlock(default_conv, ngf * 4, 3)
+
+        ###### upsample
+        self.up1 = nn.Sequential(nn.ConvTranspose2d(ngf*4, ngf*2, kernel_size=3, stride=2, padding=1, output_padding=1),
+                                 nn.ReLU(True))
+        self.up2 = nn.Sequential(nn.ConvTranspose2d(ngf*2, ngf, kernel_size=3, stride=2, padding=1, output_padding=1),
+                                 nn.ReLU(True))
+        self.up3 = nn.Sequential(nn.ReflectionPad2d(3),
+                                 nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0),
+                                 nn.Tanh())
+
+
+        self.dcn_block = DCNBlock(256, 256)
+
+        # self.deconv = FastDeconv(3, 3, kernel_size=3, stride=1, padding=1)
+        self.deconv = nn.ConvTranspose2d(3, 3, kernel_size=3, stride=1, padding=1)
+
+        self.mix1 = Mix(m=-1)
+        self.mix2 = Mix(m=-0.6)
+
+    def forward(self, input):
+
+        x_deconv = self.deconv(input) # preprocess
+
+        x_down1 = self.down1(x_deconv) # [bs, 64, 256, 256]
+        x_down2 = self.down2(x_down1) # [bs, 128, 128, 128]
+        x_down3 = self.down3(x_down2) # [bs, 256, 64, 64]
+
+        x1 = self.block(x_down3)
+        x2 = self.block(x1)
+        x3 = self.block(x2)
+        x4 = self.block(x3)
+        x5 = self.block(x4)
+        x6 = self.block(x5)
+
+        x_dcn1 = self.dcn_block(x6)
+        x_dcn2 = self.dcn_block(x_dcn1)
+
+        x_out_mix = self.mix1(x_down3, x_dcn2)
+        x_up1 = self.up1(x_out_mix) # [bs, 128, 128, 128]
+        x_up1_mix = self.mix2(x_down2, x_up1)
+        x_up2 = self.up2(x_up1_mix) # [bs, 64, 256, 256] 
+        out = self.up3(x_up2) # [bs,  3, 256, 256]
+
+        return out

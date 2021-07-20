@@ -150,9 +150,7 @@ def get_lr(optimizer):
         return param_group['lr']
 
 def plot_losses(iters, losses, path):
-    plt.plot(iters, losses[0], 'r', label='Total loss')
-    plt.plot(iters, losses[1], 'b', label='Base loss')
-    plt.plot(iters, losses[2], 'g', label='GAN loss')
+    plt.plot(iters, losses, 'r', label='Total loss')
     plt.legend(loc='upper right')   
     plt.xlabel('Iterations')
     plt.ylabel('Losses')
@@ -174,8 +172,7 @@ def plot_scores(epochs, scores, path):
         json.dump([epochs, scores], fp)
 
 def plot_lrs(epochs, lrs, path):
-    plt.plot(epochs, lrs[0], 'r', label='Generator')
-    plt.plot(epochs, lrs[1], 'b', label='Discriminator')
+    plt.plot(epochs, lrs, 'r', label='Generator')
     plt.legend(loc='upper right')   
     plt.xlabel('Epochs')
     plt.ylabel('lrs')

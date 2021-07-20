@@ -14,16 +14,10 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
     losses = AverageMeter()
 
     # Model
-    model = models[0]
-    dis_model = models[1]
+    model = models
     model.train()
-    dis_model.train()
-    # Optimizer
-    optim = optims[0]
-    dis_optim = optims[1]
-    # Criterions
-    criterion = criterions[0]
-    dis_criterion = criterions[1]
+    optim = optims
+    criterion = criterions
 
     end = time.time()
     
@@ -44,29 +38,21 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
         ## feed-forward the data into network
         outs = model(inputs)        
         optim.zero_grad()
-        dis_optim.zero_grad()
         
         ## Calculate the loss
         ## Base loss
         loss = criterion(outs, gts)
-        ## GAN loss
-        dis_loss = dis_criterion(gts, target_is_real=True) + dis_criterion(dis_model(outs.detach()), target_is_real=False)
-        gen_loss = dis_criterion(dis_model(outs), target_is_real=True)
         ## Total loss
-        total_loss = loss+gan_weight*(dis_loss+gen_loss)
-        losses.update(total_loss.data, inputs.size(0))
+        losses.update(loss.data, inputs.size(0))
         
         ## backward and update the network
-        total_loss.backward()
+        loss.backward()
         optim.step()
-        dis_optim.step()
 
         batch_time.update(time.time() - end)
         end = time.time()
 
         iters.append(i)
-        base_losses.append(loss.item())
-        gan_losses.append((dis_loss+gen_loss).item())
-        total_losses.append(total_loss.item())
+        total_losses.append(loss.item())
 
-    return [iters, total_losses, gan_losses, base_losses]
+    return [iters, total_losses]
