@@ -16,9 +16,8 @@ from torchvision.models import vgg16
 
 from lib.utils.util import create_window, _ssim
 
-
 class LossFunction(torch.nn.Module):
-    def __init__(self, weight_ssim, weight_perc):
+    def __init__(self, ssim_weight, perc_weight):
         super(LossFunction, self).__init__()
         vgg_model = vgg16(pretrained=True).features
         vgg_model = vgg_model.cuda()

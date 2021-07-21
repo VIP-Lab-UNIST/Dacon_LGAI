@@ -145,6 +145,10 @@ def Gaussiansmoothing(img, channel=3, window_size = 11):
     
     return x_smooth, img - x_smooth
 
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
+
 def plot_losses(iters, losses, path):
     plt.plot(iters, losses[0], 'r', label='Total loss')
     plt.plot(iters, losses[1], 'b', label='Base loss')
@@ -168,3 +172,14 @@ def plot_scores(epochs, scores, path):
     plt.cla()
     with open(path.replace('.jpg', '.json'), 'w') as fp:
         json.dump([epochs, scores], fp)
+
+def plot_lrs(epochs, lrs, path):
+    plt.plot(epochs, lrs[0], 'r', label='Generator')
+    plt.plot(epochs, lrs[1], 'b', label='Discriminator')
+    plt.legend(loc='upper right')   
+    plt.xlabel('Epochs')
+    plt.ylabel('lrs')
+    plt.grid()
+    plt.savefig(path)
+    plt.clf()
+    plt.cla()

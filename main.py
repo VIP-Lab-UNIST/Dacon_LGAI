@@ -13,9 +13,10 @@ import lib.datasets.transforms as transforms
 from run.train import train
 from run.test import validate
 from lib.datasets.dataset import RestList
-from models.network import fusion_net, Discriminator
+from models.network import fusion_net, Discriminator, Deep_Discriminator
 from models.loss import LossFunction, GANLoss
-from lib.utils.util import save_output_images, save_checkpoint, psnr, plot_losses, plot_scores
+from models.optimizer import CosineAnnealingWarmUpRestarts
+from lib.utils.util import save_output_images, save_checkpoint, psnr, plot_losses, plot_scores, plot_lrs
 
 def run(args, saveDirName='.', logger=None):
     #######################################
@@ -61,13 +62,22 @@ def run(args, saveDirName='.', logger=None):
 
     gen = fusion_net()
     gen = torch.nn.DataParallel(gen).cuda()
+    # gen_optim = torch.optim.SGD(gen.parameters(), lr=args.lr, momentum=0.9)
     gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
-    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
+
+    # gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
+    gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
+    # gen_scheduler = optim.lr_scheduler.ReduceLROnPlateau(gen_optim)
 
     dis = Discriminator()
+    # dis = Deep_Discriminator()
     dis = torch.nn.DataParallel(dis).cuda()
+    # dis_optim = torch.optim.SGD(dis.parameters(), lr=args.lr, momentum=0.9)
     dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
+
     dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[30, 50, 60], gamma=0.5)
+    # dis_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(dis_optim, T_0=20, T_mult=1, eta_min=0.00001)
+    # dis_scheduler = optim.lr_scheduler.ReduceLROnPlateau(dis_optim)
     
     if args.resume is not None:
         state = torch.load(args.resume)
@@ -79,7 +89,7 @@ def run(args, saveDirName='.', logger=None):
         dis.load_state_dict(state['dis'])
         dis_optim.load_state_dict(state['dis_optim'])
         dis_scheduler.load_state_dict(state['dis_scheduler'])
-        print('Complete the resume')
+        print('Complete the resume!')
     else:
         start_epoch = 0
 
@@ -87,7 +97,7 @@ def run(args, saveDirName='.', logger=None):
     # (4) Define loss function
     #######################################
 
-    criterion = LossFunction(weight_ssim=args.ssim_weight, weight_perc=args.perc_weight).cuda()
+    criterion = LossFunction(ssim_weight=args.ssim_weight, perc_weight=args.perc_weight).cuda()
     dis_criterion = GANLoss().cuda()
 
     #######################################
@@ -96,16 +106,17 @@ def run(args, saveDirName='.', logger=None):
 
     cudnn.benchmark = True
     best_prec1 = 0
-    lr = args.lr
     plot_val_scores = []
     plot_epochs = []
     plot_iters =  []
     plot_base_losses= []
     plot_gan_losses= []
     plot_total_losses= []
+    plot_lrs_dis = []
+    plot_lrs_gen = []
     if args.cmd == 'train' : # train mode
         for epoch in range(start_epoch, args.epochs):
-            logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, lr))
+            logger.info('Epoch: [{0}]\t Gen lr {1:.06f}\t Dis lr {1:.06f}'.format(epoch, gen_optim.param_groups[0]['lr'], dis_optim.param_groups[0]['lr']))
             ## train the network
             train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], args.gan_weight, eval_score=psnr, logger=logger)        
             ## validate the network
@@ -125,6 +136,8 @@ def run(args, saveDirName='.', logger=None):
 
             gen_scheduler.step()
             dis_scheduler.step()
+            # gen_scheduler.step(sum(train_losses[3])/len(train_losses[3]))
+            # dis_scheduler.step(sum(train_losses[2])/len(train_losses[2]))
 
             #######################################
             # (6) Plotting
@@ -135,13 +148,19 @@ def run(args, saveDirName='.', logger=None):
             plot_base_losses.extend(train_losses[3])
             plot_epochs.append(epoch+1)
             plot_val_scores.append(val_score.item())
+            
+            plot_lrs_gen.append(gen_optim.param_groups[0]['lr'])
+            plot_lrs_dis.append(dis_optim.param_groups[0]['lr'])
             ## Loss
             plot_losses(plot_iters, [plot_total_losses, plot_base_losses, plot_gan_losses], os.path.join(saveDirName, 'losses.jpg'))
 
             ## Scores
             plot_scores(plot_epochs, plot_val_scores, os.path.join(saveDirName, 'scores.jpg'))
+            
+            ## Learning rate
+            plot_lrs(plot_epochs, [plot_lrs_gen, plot_lrs_dis], os.path.join(saveDirName, 'lrs.jpg'))
 
-    else :  # test mode (if epoch = 0, the image format is png)
+    else :  
         val_score = validate(test_loader, gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
 
 def parse_args():
@@ -192,6 +211,5 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 

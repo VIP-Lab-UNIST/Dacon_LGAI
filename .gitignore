@@ -6,5 +6,8 @@ train.sh
 test.sh
 .DS_Store
 tmp.py
+<<<<<<< HEAD
 **/*.png
+=======
+>>>>>>> khko_baseline
 ImageNet.pth
