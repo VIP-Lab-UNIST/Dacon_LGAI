@@ -43,18 +43,18 @@ def run(args, saveDirName='.', logger=None):
     train_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'train', transforms.Compose(t_super)),
         batch_size=batch_size, shuffle=True, num_workers=8,
-        pin_memory=True, drop_last=False)
+        pin_memory=False, drop_last=False)
 
     t = [transforms.ToTensor()]
     val_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'val', transforms.Compose(t), out_name=True),
         batch_size=1, shuffle=False, num_workers=8,
-        pin_memory=True, drop_last=False)
+        pin_memory=False, drop_last=False)
 
     test_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'test', transforms.Compose(t), out_name=True),
         batch_size=1, shuffle=False, num_workers=8,
-        pin_memory=True, drop_last=False)
+        pin_memory=False, drop_last=False)
 
     #######################################
     # (3) Initialize neural netowrk and optimizer
@@ -62,33 +62,55 @@ def run(args, saveDirName='.', logger=None):
 
     gen = fusion_net()
     gen = torch.nn.DataParallel(gen).cuda()
-    # gen_optim = torch.optim.SGD(gen.parameters(), lr=args.lr, momentum=0.9)
     gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
 
     # gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
     gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
-    # gen_scheduler = optim.lr_scheduler.ReduceLROnPlateau(gen_optim)
 
     dis = Discriminator()
-    # dis = Deep_Discriminator()
+    dis1 = Discriminator()
+    dis2 = Discriminator()
+    dis3 = Discriminator()
+    dis4 = Discriminator()
     dis = torch.nn.DataParallel(dis).cuda()
-    # dis_optim = torch.optim.SGD(dis.parameters(), lr=args.lr, momentum=0.9)
-    dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
+    dis1 = torch.nn.DataParallel(dis1).cuda()
+    dis2 = torch.nn.DataParallel(dis2).cuda()
+    dis3 = torch.nn.DataParallel(dis3).cuda()
+    dis4 = torch.nn.DataParallel(dis4).cuda()
+    dis_optim = torch.optim.Adam(dis.parameters(), args.lr*0.1)
+    dis_optim1 = torch.optim.Adam(dis1.parameters(), args.lr)
+    dis_optim2 = torch.optim.Adam(dis2.parameters(), args.lr)
+    dis_optim3 = torch.optim.Adam(dis3.parameters(), args.lr)
+    dis_optim4 = torch.optim.Adam(dis4.parameters(), args.lr)
 
     dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[30, 50, 60], gamma=0.5)
+    dis_scheduler1 = optim.lr_scheduler.MultiStepLR(dis_optim1, milestones=[30, 50, 60], gamma=0.5)
+    dis_scheduler2 = optim.lr_scheduler.MultiStepLR(dis_optim2, milestones=[30, 50, 60], gamma=0.5)
+    dis_scheduler3 = optim.lr_scheduler.MultiStepLR(dis_optim3, milestones=[30, 50, 60], gamma=0.5)
+    dis_scheduler4 = optim.lr_scheduler.MultiStepLR(dis_optim4, milestones=[30, 50, 60], gamma=0.5)
     # dis_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(dis_optim, T_0=20, T_mult=1, eta_min=0.00001)
-    # dis_scheduler = optim.lr_scheduler.ReduceLROnPlateau(dis_optim)
-    
+
     if args.resume is not None:
         state = torch.load(args.resume)
         start_epoch = state['epoch']
-        gen.load_state_dict(state['gen'])
-        gen_optim.load_state_dict(state['gen_optim'])
-        gen_scheduler.load_state_dict(state['gen_scheduler'])
+        
+        gen_model_dict = gen.state_dict()
+        gen_pretrained_dict = state['gen']
+        gen_pretrained_dict = {k: v for k, v in gen_pretrained_dict.items() if k in gen_model_dict}
+        gen_model_dict.update(gen_pretrained_dict)
+        gen.load_state_dict(gen_model_dict)
+        
+        # gen_optim.load_state_dict(state['gen_optim'])
+        # gen_scheduler.load_state_dict(state['gen_scheduler'])
 
-        dis.load_state_dict(state['dis'])
-        dis_optim.load_state_dict(state['dis_optim'])
-        dis_scheduler.load_state_dict(state['dis_scheduler'])
+        dis_model_dict = dis.state_dict()
+        dis_pretrained_dict = state['dis']
+        dis_pretrained_dict = {k: v for k, v in dis_pretrained_dict.items() if k in dis_model_dict}
+        dis_model_dict.update(dis_pretrained_dict)
+        dis.load_state_dict(dis_model_dict)
+
+        # dis_optim.load_state_dict(state['dis_optim'])
+        # dis_scheduler.load_state_dict(state['dis_scheduler'])
         print('Complete the resume!')
     else:
         start_epoch = 0
@@ -118,7 +140,7 @@ def run(args, saveDirName='.', logger=None):
         for epoch in range(start_epoch, args.epochs):
             logger.info('Epoch: [{0}]\t Gen lr {1:.06f}\t Dis lr {1:.06f}'.format(epoch, gen_optim.param_groups[0]['lr'], dis_optim.param_groups[0]['lr']))
             ## train the network
-            train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], args.gan_weight, eval_score=psnr, logger=logger)        
+            train_losses = train(train_loader, [gen, dis, dis1, dis2, dis3, dis4], [gen_optim, dis_optim, dis_optim1, dis_optim2, dis_optim3, dis_optim4], [criterion, dis_criterion], args.gan_weight, eval_score=psnr, logger=logger)        
             ## validate the network
             val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger, phase='val')
 
@@ -128,16 +150,30 @@ def run(args, saveDirName='.', logger=None):
                 'epoch': epoch + 1,
                 'gen': gen.state_dict(),
                 'dis': dis.state_dict(),
+                'dis1': dis1.state_dict(),
+                'dis2': dis2.state_dict(),
+                'dis3': dis3.state_dict(),
+                'dis4': dis4.state_dict(),
                 'gen_optim': gen_optim.state_dict(),
                 'dis_optim': dis_optim.state_dict(),
+                'dis_optim1': dis_optim1.state_dict(),
+                'dis_optim2': dis_optim2.state_dict(),
+                'dis_optim3': dis_optim3.state_dict(),
+                'dis_optim4': dis_optim4.state_dict(),
                 'gen_scheduler': gen_scheduler.state_dict(),
                 'dis_scheduler': dis_scheduler.state_dict(),
+                'dis_scheduler1': dis_scheduler1.state_dict(),
+                'dis_scheduler2': dis_scheduler2.state_dict(),
+                'dis_scheduler3': dis_scheduler3.state_dict(),
+                'dis_scheduler4': dis_scheduler4.state_dict(),
             }, True, filename=history_path_g)
 
             gen_scheduler.step()
             dis_scheduler.step()
-            # gen_scheduler.step(sum(train_losses[3])/len(train_losses[3]))
-            # dis_scheduler.step(sum(train_losses[2])/len(train_losses[2]))
+            dis_scheduler1.step()
+            dis_scheduler2.step()
+            dis_scheduler3.step()
+            dis_scheduler4.step()
 
             #######################################
             # (6) Plotting

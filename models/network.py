@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 import torch
 import models.Res2Net as Pre_Res2Net

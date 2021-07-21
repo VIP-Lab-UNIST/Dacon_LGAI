@@ -24,9 +24,9 @@ class LossFunction(torch.nn.Module):
         for param in vgg_model.parameters():
             param.requires_grad = False
         self.ssim_module = SSIM()
-        self.weight_ssim = weight_ssim
+        self.ssim_weight = ssim_weight
         self.vgg_module = VGG(vgg_model)
-        self.weight_perc = weight_perc
+        self.perc_weight = perc_weight
 
 
     def forward(self, out_img, gt_img):
@@ -37,10 +37,10 @@ class LossFunction(torch.nn.Module):
         inp_features, pv = self.vgg_module(out_img)
         gt_features, _ = self.vgg_module(gt_img)
         for i in range(3):
-            p_loss.append(F.mse_loss(inp_features[i],gt_features[i]))
+            p_loss.append(F.smooth_l1_loss(inp_features[i],gt_features[i]))
         perc_loss = sum(p_loss)/len(p_loss)
 
-        return sm_l1_loss + self.weight_ssim*ssim_loss + self.weight_perc*perc_loss
+        return sm_l1_loss + self.ssim_weight*ssim_loss + self.perc_weight*perc_loss
         # return mse_loss + ssim_loss + 0.01 * perc_loss
 
 class SSIM(torch.nn.Module):
