@@ -54,10 +54,13 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
 
         ## loading image pairs
         inputs = inputs.float().cuda()
+        inputs2 = F.interpolate(inputs, scale_factor=0.5).cuda()
+        inputs3 = F.interpolate(inputs2, scale_factor=0.5).cuda()
+        inputs4 = F.interpolate(inputs3, scale_factor=0.5).cuda()
         gts = gts.float().cuda()
-        gts2 = F.interpolate(gts, scale_factor=0.5)
-        gts3 = F.interpolate(gts2, scale_factor=0.5)
-        gts4 = F.interpolate(gts3, scale_factor=0.5)
+        gts2 = F.interpolate(gts, scale_factor=0.5).cuda()
+        gts3 = F.interpolate(gts2, scale_factor=0.5).cuda()
+        gts4 = F.interpolate(gts3, scale_factor=0.5).cuda()
 
         ## feed-forward the data into network
         outs, outs1, outs2, outs3, outs4 = model(inputs)      
@@ -70,18 +73,18 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
         
         ## Calculate the loss
         ## Base loss
-        loss = criterion(outs, gts)
-        DWT_loss1 = criterion(outs1[0], gts)
-        KA_loss1 = criterion(outs1[1], gts)
+        loss = criterion(inputs, outs, gts)
+        DWT_loss1 = criterion(inputs, outs1[0], gts)
+        KA_loss1 = criterion(inputs, outs1[1], gts)
 
-        DWT_loss2 = criterion(outs2[0], gts2)
-        KA_loss2 = criterion(outs2[1], gts2)
+        DWT_loss2 = criterion(inputs2, outs2[0], gts2)
+        KA_loss2 = criterion(inputs2, outs2[1], gts2)
 
-        DWT_loss3 = criterion(outs3[0], gts3)
-        KA_loss3 = criterion(outs3[1], gts3)
+        DWT_loss3 = criterion(inputs3, outs3[0], gts3)
+        KA_loss3 = criterion(inputs3, outs3[1], gts3)
 
-        DWT_loss4 = criterion(outs4[0], gts4)
-        KA_loss4 = criterion(outs4[1], gts4)
+        DWT_loss4 = criterion(inputs4, outs4[0], gts4)
+        KA_loss4 = criterion(inputs4, outs4[1], gts4)
 
         base_loss = loss + (DWT_loss1+KA_loss1) + (DWT_loss2+KA_loss2) + (DWT_loss3+KA_loss3) + (DWT_loss4+KA_loss4)
         

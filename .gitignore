@@ -2,12 +2,7 @@ data
 logs
 **/*__pycache__*
 **/*@eaDir*
-train.sh
-test.sh
 .DS_Store
+**/*.nfs*
 tmp.py
-<<<<<<< HEAD
-**/*.png
-=======
->>>>>>> khko_baseline
 ImageNet.pth

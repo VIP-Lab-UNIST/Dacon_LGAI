@@ -119,7 +119,7 @@ def run(args, saveDirName='.', logger=None):
     # (4) Define loss function
     #######################################
 
-    criterion = LossFunction(ssim_weight=args.ssim_weight, perc_weight=args.perc_weight).cuda()
+    criterion = LossFunction(ssim_weight=args.ssim_weight, perc_weight=args.perc_weight, regular_weight=args.regular_weight).cuda()
     dis_criterion = GANLoss().cuda()
 
     #######################################
@@ -209,6 +209,7 @@ def parse_args():
     parser.add_argument('--step', type=int, default=200) #
     parser.add_argument('--ssim_weight', type=float, default=0) #
     parser.add_argument('--perc_weight', type=float, default=0) #
+    parser.add_argument('--regular_weight', type=float, default=0) #
     parser.add_argument('--gan_weight', type=float, default=0) #
     parser.add_argument('--batch-size', type=int, default=1, metavar='N', #
                         help='input batch size for training (default: 64)') #
