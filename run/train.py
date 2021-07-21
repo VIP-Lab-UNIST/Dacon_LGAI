@@ -3,7 +3,7 @@ import time
 from tqdm import tqdm
 from lib.utils.util import AverageMeter
 
-def train(train_loader, models, optims, criterions, gan_weight, eval_score=None, print_freq=10, logger=None):
+def train(train_loader, models, optims, criterions, eval_score=None, print_freq=10, logger=None):
     
     #######################################
     # (1) Initialize    
@@ -40,9 +40,7 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
         optim.zero_grad()
         
         ## Calculate the loss
-        ## Base loss
-        loss = criterion(outs, gts)
-        ## Total loss
+        loss = criterion(inputs, outs, gts)
         losses.update(loss.data, inputs.size(0))
         
         ## backward and update the network

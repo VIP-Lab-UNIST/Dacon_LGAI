@@ -65,7 +65,8 @@ def run(args, saveDirName='.', logger=None):
     # gen_optim = torch.optim.SGD(gen.parameters(), lr=args.lr, momentum=0.9)
     gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
 
-    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
+    # gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50], gamma=0.5)
+    gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(gen_optim, T_max=10, eta_min=0.00001)
     # gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
     # gen_scheduler = optim.lr_scheduler.ReduceLROnPlateau(gen_optim)
 
@@ -83,7 +84,7 @@ def run(args, saveDirName='.', logger=None):
     # (4) Define loss function
     #######################################
 
-    criterion = LossFunction(ssim_weight=args.ssim_weight, perc_weight=args.perc_weight).cuda()
+    criterion = LossFunction(ssim_weight=args.ssim_weight, perc_weight=args.perc_weight, regular_weight=args.regular_weight).cuda()
 
     #######################################
     # (5) Train or test
@@ -102,7 +103,7 @@ def run(args, saveDirName='.', logger=None):
         for epoch in range(start_epoch, args.epochs):
             logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, gen_optim.param_groups[0]['lr']))
             ## train the network
-            train_losses = train(train_loader, gen, gen_optim, criterion, args.gan_weight, eval_score=psnr, logger=logger)        
+            train_losses = train(train_loader, gen, gen_optim, criterion, eval_score=psnr, logger=logger)        
             ## validate the network
             val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger, phase='val')
 
@@ -148,7 +149,7 @@ def parse_args():
     parser.add_argument('--step', type=int, default=200) #
     parser.add_argument('--ssim_weight', type=float, default=0) #
     parser.add_argument('--perc_weight', type=float, default=0) #
-    parser.add_argument('--gan_weight', type=float, default=0) #
+    parser.add_argument('--regular_weight', type=float, default=0) #
     parser.add_argument('--batch-size', type=int, default=1, metavar='N', #
                         help='input batch size for training (default: 64)') #
     parser.add_argument('--epochs', type=int, default=10, metavar='N', #
