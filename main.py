@@ -62,10 +62,10 @@ def run(args, saveDirName='.', logger=None):
 
     gen = fusion_net()
     gen = torch.nn.DataParallel(gen).cuda()
-    gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
+    gen_optim = torch.optim.Adam(gen.parameters(), args.lr*0.1)
 
-    # gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
-    gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
+    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
+    # gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
 
     dis = Discriminator()
     dis1 = Discriminator()
