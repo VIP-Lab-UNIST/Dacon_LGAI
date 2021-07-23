@@ -13,8 +13,8 @@ import lib.datasets.transforms as transforms
 from run.train import train
 from run.test import validate
 from lib.datasets.dataset import RestList
-from models.network import Baseline, Discriminator, Deep_Discriminator
-from models.loss import LossFunction, GANLoss
+from models.network import MPRNet
+from models import loss
 from models.optimizer import CosineAnnealingWarmUpRestarts
 from lib.utils.util import save_output_images, save_checkpoint, psnr, plot_losses, plot_scores, plot_lrs
 
@@ -42,42 +42,31 @@ def run(args, saveDirName='.', logger=None):
 
     train_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'train', transforms.Compose(t_super)),
-        batch_size=batch_size, shuffle=True, num_workers=8,
-        pin_memory=True, drop_last=False)
+        batch_size=batch_size, shuffle=True, num_workers=1,
+        pin_memory=False, drop_last=False)
 
     t = [transforms.ToTensor()]
     val_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'val', transforms.Compose(t), out_name=True),
-        batch_size=1, shuffle=False, num_workers=8,
-        pin_memory=True, drop_last=False)
+        batch_size=1, shuffle=False, num_workers=1,
+        pin_memory=False, drop_last=False)
 
     test_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'test', transforms.Compose(t), out_name=True),
-        batch_size=1, shuffle=False, num_workers=8,
-        pin_memory=True, drop_last=False)
+        batch_size=1, shuffle=False, num_workers=1,
+        pin_memory=False, drop_last=False)
 
     #######################################
     # (3) Initialize neural netowrk and optimizer
     #######################################
 
-    gen = Baseline()
+    gen = MPRNet()
     gen = torch.nn.DataParallel(gen).cuda()
-    # gen_optim = torch.optim.SGD(gen.parameters(), lr=args.lr, momentum=0.9)
-    gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
+    gen_optim = torch.optim.Adam(gen.parameters(), args.lr,eps=1e-8)
 
-    # gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
-    gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
+    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
+    # gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=0.00001)
     # gen_scheduler = optim.lr_scheduler.ReduceLROnPlateau(gen_optim)
-
-    dis = Discriminator()
-    # dis = Deep_Discriminator()
-    dis = torch.nn.DataParallel(dis).cuda()
-    # dis_optim = torch.optim.SGD(dis.parameters(), lr=args.lr, momentum=0.9)
-    dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
-
-    dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[30, 50, 60], gamma=0.5)
-    # dis_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(dis_optim, T_0=20, T_mult=1, eta_min=0.00001)
-    # dis_scheduler = optim.lr_scheduler.ReduceLROnPlateau(dis_optim)
     
     if args.resume is not None:
         state = torch.load(args.resume)
@@ -85,10 +74,6 @@ def run(args, saveDirName='.', logger=None):
         gen.load_state_dict(state['gen'])
         gen_optim.load_state_dict(state['gen_optim'])
         gen_scheduler.load_state_dict(state['gen_scheduler'])
-
-        dis.load_state_dict(state['dis'])
-        dis_optim.load_state_dict(state['dis_optim'])
-        dis_scheduler.load_state_dict(state['dis_scheduler'])
         print('Complete the resume!')
     else:
         start_epoch = 0
@@ -96,9 +81,11 @@ def run(args, saveDirName='.', logger=None):
     #######################################
     # (4) Define loss function
     #######################################
+    criterion_char = loss.CharbonnierLoss()
+    criterion_edge = loss.EdgeLoss()
 
-    criterion = LossFunction(ssim_weight=args.ssim_weight, perc_weight=args.perc_weight).cuda()
-    dis_criterion = GANLoss().cuda()
+    # criterion = LossFunction(ssim_weight=args.ssim_weight, perc_weight=args.perc_weight).cuda()
+    # dis_criterion = GANLoss().cuda()
 
     #######################################
     # (5) Train or test
@@ -109,16 +96,17 @@ def run(args, saveDirName='.', logger=None):
     plot_val_scores = []
     plot_epochs = []
     plot_iters =  []
-    plot_base_losses= []
-    plot_gan_losses= []
+    plot_char_losses= []
+    plot_edge_losses= []
     plot_total_losses= []
     plot_lrs_dis = []
     plot_lrs_gen = []
     if args.cmd == 'train' : # train mode
         for epoch in range(start_epoch, args.epochs):
-            logger.info('Epoch: [{0}]\t Gen lr {1:.06f}\t Dis lr {1:.06f}'.format(epoch, gen_optim.param_groups[0]['lr'], dis_optim.param_groups[0]['lr']))
+            logger.info('Epoch: [{0}]'.format(epoch))
+            # logger.info('Epoch: [{0}]\t Gen lr {1:.06f}\t Dis lr {1:.06f}'.format(epoch, gen_optim.param_groups[0]['lr'], dis_optim.param_groups[0]['lr']))
             ## train the network
-            train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], args.gan_weight, eval_score=psnr, logger=logger)        
+            train_losses = train(train_loader, gen, gen_optim, [criterion_char, criterion_edge], args.edge_weight, eval_score=psnr, logger=logger)        
             ## validate the network
             val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger, phase='val')
 
@@ -127,38 +115,31 @@ def run(args, saveDirName='.', logger=None):
             save_checkpoint({
                 'epoch': epoch + 1,
                 'gen': gen.state_dict(),
-                'dis': dis.state_dict(),
                 'gen_optim': gen_optim.state_dict(),
-                'dis_optim': dis_optim.state_dict(),
                 'gen_scheduler': gen_scheduler.state_dict(),
-                'dis_scheduler': dis_scheduler.state_dict(),
             }, True, filename=history_path_g)
 
             gen_scheduler.step()
-            dis_scheduler.step()
-            # gen_scheduler.step(sum(train_losses[3])/len(train_losses[3]))
-            # dis_scheduler.step(sum(train_losses[2])/len(train_losses[2]))
 
             #######################################
             # (6) Plotting
             #######################################
             plot_iters.extend(list(map(lambda x: epoch*len(train_loader)+x, train_losses[0])))
             plot_total_losses.extend(train_losses[1])
-            plot_gan_losses.extend(train_losses[2])
-            plot_base_losses.extend(train_losses[3])
+            plot_char_losses.extend(train_losses[2])
+            plot_edge_losses.extend(train_losses[3])
             plot_epochs.append(epoch+1)
             plot_val_scores.append(val_score.item())
             
             plot_lrs_gen.append(gen_optim.param_groups[0]['lr'])
-            plot_lrs_dis.append(dis_optim.param_groups[0]['lr'])
             ## Loss
-            plot_losses(plot_iters, [plot_total_losses, plot_base_losses, plot_gan_losses], os.path.join(saveDirName, 'losses.jpg'))
+            plot_losses(plot_iters, [plot_total_losses, plot_char_losses, plot_edge_losses], os.path.join(saveDirName, 'losses.jpg'))
 
             ## Scores
             plot_scores(plot_epochs, plot_val_scores, os.path.join(saveDirName, 'scores.jpg'))
             
             ## Learning rate
-            plot_lrs(plot_epochs, [plot_lrs_gen, plot_lrs_dis], os.path.join(saveDirName, 'lrs.jpg'))
+            # plot_lrs(plot_epochs, [plot_lrs_gen, plot_lrs_dis], os.path.join(saveDirName, 'lrs.jpg'))
 
     else :  
         val_score = validate(test_loader, gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
@@ -173,7 +154,7 @@ def parse_args():
     parser.add_argument('--step', type=int, default=200) #
     parser.add_argument('--ssim_weight', type=float, default=0) #
     parser.add_argument('--perc_weight', type=float, default=0) #
-    parser.add_argument('--gan_weight', type=float, default=0) #
+    parser.add_argument('--edge_weight', type=float, default=0) #
     parser.add_argument('--batch-size', type=int, default=1, metavar='N', #
                         help='input batch size for training (default: 64)') #
     parser.add_argument('--epochs', type=int, default=10, metavar='N', #

@@ -47,12 +47,12 @@ class RestList(torch.utils.data.Dataset):
 
     def _make_list(self, out_name):
         if self.phase=='train': 
-            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/256_cropped/train_256/*.png'))
-            self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/256_cropped/train_gt_256/*.png'))
+            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/256_cropped/train_256/*.png'))[:1]
+            self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/256_cropped/train_gt_256/*.png'))[:1]
             assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
         elif self.phase=='val' : 
-            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_input/*.png'))
-            self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_label/*.png'))
+            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_input/*.png'))[19:]
+            self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_label/*.png'))[19:]
             assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
         else:
             self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/test_input/*.png'))

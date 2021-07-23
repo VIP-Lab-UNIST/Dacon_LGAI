@@ -1,112 +1,43 @@
-import os
-import threading
-import numpy as np
-import shutil
-import math
-import logging
-from PIL import Image
-from datetime import datetime
-# from math import log10, exp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.models as models
-from torch.autograd import Variable
-from torchvision.models import vgg16
 
-from lib.utils.util import create_window, _ssim
+class CharbonnierLoss(nn.Module):
+    """Charbonnier Loss (L1)"""
 
-class LossFunction(torch.nn.Module):
-    def __init__(self, ssim_weight, perc_weight):
-        super(LossFunction, self).__init__()
-        vgg_model = vgg16(pretrained=True).features
-        vgg_model = vgg_model.cuda()
-        for param in vgg_model.parameters():
-            param.requires_grad = False
-        self.vgg_module = VGG(vgg_model)
-        self.ssim_module = SSIM()
-        self.ssim_weight = ssim_weight
-        self.perc_weight = perc_weight
+    def __init__(self, eps=1e-3):
+        super(CharbonnierLoss, self).__init__()
+        self.eps = eps
 
-    def forward(self, out_img, gt_img):
-        mse_loss = F.mse_loss(out_img, gt_img)
-        ssim_loss = self.ssim_module(out_img, gt_img)
-        p_loss = []
-        inp_features, pv = self.vgg_module(out_img)
-        gt_features, _ = self.vgg_module(gt_img)
-        for i in range(3):
-            p_loss.append(F.mse_loss(inp_features[i],gt_features[i]))
-        perc_loss = sum(p_loss)/len(p_loss)
+    def forward(self, x, y):
+        diff = x - y
+        # loss = torch.sum(torch.sqrt(diff * diff + self.eps))
+        loss = torch.mean(torch.sqrt((diff * diff) + (self.eps*self.eps)))
+        return loss
 
-        return mse_loss + self.ssim_weight*ssim_loss + self.perc_weight*perc_loss
+class EdgeLoss(nn.Module):
+    def __init__(self):
+        super(EdgeLoss, self).__init__()
+        k = torch.Tensor([[.05, .25, .4, .25, .05]])
+        self.kernel = torch.matmul(k.t(),k).unsqueeze(0).repeat(3,1,1,1)
+        if torch.cuda.is_available():
+            self.kernel = self.kernel.cuda()
+        self.loss = CharbonnierLoss()
 
-class SSIM(torch.nn.Module):
-    def __init__(self, window_size = 11, size_average = True):
-        super(SSIM, self).__init__()
-        self.window_size = window_size
-        self.size_average = size_average
-        self.channel = 1
-        self.window = create_window(window_size, self.channel)
+    def conv_gauss(self, img):
+        n_channels, _, kw, kh = self.kernel.shape
+        img = F.pad(img, (kw//2, kh//2, kw//2, kh//2), mode='replicate')
+        return F.conv2d(img, self.kernel, groups=n_channels)
 
-    def forward(self, img1, img2):
-        (_, channel, _, _) = img1.size()
+    def laplacian_kernel(self, current):
+        filtered    = self.conv_gauss(current)    # filter
+        down        = filtered[:,:,::2,::2]               # downsample
+        new_filter  = torch.zeros_like(filtered)
+        new_filter[:,:,::2,::2] = down*4                  # upsample
+        filtered    = self.conv_gauss(new_filter) # filter
+        diff = current - filtered
+        return diff
 
-        if channel == self.channel and self.window.data.type() == img1.data.type():
-            window = self.window
-        else:
-            window = create_window(self.window_size, channel)
-            
-            if img1.is_cuda:
-                window = window.cuda(img1.get_device())
-            window = window.type_as(img1)
-            
-            self.window = window
-            self.channel = channel
-
-
-        return (1 - _ssim(img1, img2, window, self.window_size, channel, self.size_average))
-
-
-class GANLoss(nn.Module):
-    def __init__(self, use_lsgan=True, target_real_label=1.0, target_fake_label=0.0):
-        super(GANLoss, self).__init__()
-        self.register_buffer('real_label', torch.tensor(target_real_label))
-        self.register_buffer('fake_label', torch.tensor(target_fake_label))
-        if use_lsgan:
-            self.loss = nn.MSELoss()
-        else:
-            self.loss = nn.BCELoss()
-
-    def get_target_tensor(self, input, target_is_real):
-        if target_is_real:
-            target_tensor = self.real_label
-        else:
-            target_tensor = self.fake_label
-        return target_tensor.expand_as(input)
-
-    def __call__(self, input, target_is_real):
-        target_tensor = self.get_target_tensor(input, target_is_real)
-        return self.loss(input, target_tensor)
-
-
-# --- Perceptual loss network  --- #
-class VGG(torch.nn.Module):
-    def __init__(self, vgg_model):
-        super(VGG, self).__init__()
-        self.vgg_layers = vgg_model
-        self.layer_name_mapping = {
-            '3': "relu1_2",
-            '8': "relu2_2",
-            '15': "relu3_3"
-        }
-        
-    def extract_features(self, x):
-        output = []
-        for name, module in self.vgg_layers._modules.items():
-            x = module(x)
-            if name in self.layer_name_mapping:
-                output.append(x)
-        return output, x
-
-    def forward(self, x):
-        return self.extract_features(x)
+    def forward(self, x, y):
+        loss = self.loss(self.laplacian_kernel(x), self.laplacian_kernel(y))
+        return loss

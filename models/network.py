@@ -1,192 +1,347 @@
-import time
-import datetime
+"""
+## Multi-Stage Progressive Image Restoration
+## Syed Waqas Zamir, Aditya Arora, Salman Khan, Munawar Hayat, Fahad Shahbaz Khan, Ming-Hsuan Yang, and Ling Shao
+## https://arxiv.org/abs/2102.02808
+"""
+
 import torch
-from torch import nn, optim
-from torch.nn import functional as F
-import numpy as np
+import torch.nn as nn
+import torch.nn.functional as F
+from pdb import set_trace as stx
 
-# --- Build dense --- #
-class VanilaModule(nn.Module):
-    def __init__(self, in_channels, growth_rate, kernel_size=3):
-        super(VanilaModule, self).__init__()
-        self.conv = ConvLayer(in_channels, growth_rate, stride=1, kernel_size=3)
-        self.act = torch.nn.PReLU()
+##########################################################################
+def conv(in_channels, out_channels, kernel_size, bias=False, stride = 1):
+    return nn.Conv2d(
+        in_channels, out_channels, kernel_size,
+        padding=(kernel_size//2), bias=bias, stride = stride)
 
-    def forward(self, x):
-        out = self.act(self.conv(x))
-        out = torch.cat((x,out), dim=1)
-        return out
 
-# --- Build the Residual Dense Block --- #
-class RDB(nn.Module):
-    def __init__(self, in_channels):
-        super(RDB, self).__init__()
-        _in_channels = in_channels
-        growth_rate = in_channels // 2
-        modules = []
-        for i in range(4):
-            modules.append(VanilaModule(_in_channels, growth_rate))
-            _in_channels += growth_rate
-        self.residual_dense_layers = nn.Sequential(*modules)
-        self.conv_1x1 = nn.Conv2d(_in_channels, in_channels, kernel_size=1, padding=0)
-
-    def forward(self, x):
-        out = self.residual_dense_layers(x)
-        out = self.conv_1x1(out)
-        out = out + x
-        return out
-
-class ConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride):
-        super(ConvLayer, self).__init__()
-        reflection_padding = kernel_size // 2
-        self.reflection_pad = nn.ReflectionPad2d(reflection_padding)
-        self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride)
-
-    def forward(self, x):
-        out = self.reflection_pad(x)
-        out = self.conv2d(out)
-        return out
-
-class ResidualBlock(torch.nn.Module):
-    def __init__(self, channels):
-        super(ResidualBlock, self).__init__()
-        self.conv1 = ConvLayer(channels, channels, kernel_size=3, stride=1)
-        self.conv2 = ConvLayer(channels, channels, kernel_size=3, stride=1)
-        self.relu = nn.PReLU()
-
-    def forward(self, x):
-        residual = x
-        out = self.relu(self.conv1(x))
-        out = self.conv2(out) * 0.1
-        out = torch.add(out, residual)
-        return out
-        
-
-class UpsampleConvLayer(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(UpsampleConvLayer, self).__init__()
-        self.reflection_pad = nn.ReflectionPad2d(1)
-        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.conv2d = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1)
-
-    def forward(self, x, y):
-        x_up = F.interpolate(x, size=(y.size(2), y.size(3)), mode='bilinear')
-        x_up = self.conv1x1(x_up)
-        out = x_up + y
-        out = self.reflection_pad(out)
-        out = self.conv2d(out)
-        return out
-
-# --- Main model  --- #
-class Baseline(nn.Module):
-    def __init__(self):
-        super(Baseline, self).__init__()
-        self.conv_e0 = ConvLayer(3, 16, kernel_size=11, stride=1) # H, W
-        self.RDB__e0 = RDB(16)
-        self.conv_e1 = ConvLayer(16, 32, kernel_size=3, stride=2) # H/2, W/2
-        self.RDB__e1 = RDB(32)
-        self.conv_e2 = ConvLayer(32, 64, kernel_size=3, stride=2) # H/4, W/4
-        self.RDB__e2 = RDB(64)
-        self.conv_e3 = ConvLayer(64, 128, kernel_size=3, stride=2) # H/8, W/8
-        self.RDB__e3 = RDB(128)
-        self.conv_e4 = ConvLayer(128, 256, kernel_size=3, stride=2) # H/16, W/16
-        self.RDB__e4 = RDB(256)
-
-        self.RDB__s1 = RDB(256)
-        self.RDB__s2 = RDB(256)
-
-        self.conv_d4 = UpsampleConvLayer(256, 128) # H/8, W/8
-        self.RDB__d4 = RDB(128)
-        self.conv_d3 = UpsampleConvLayer(128, 64) # H/4, W/4
-        self.RDB__d3 = RDB(64)
-        self.conv_d2 = UpsampleConvLayer(64, 32) # H/2, W/2
-        self.RDB__d2 = RDB(32)
-        self.conv_d1 = UpsampleConvLayer(32, 16) # H, W
-        self.RDB__d1 = RDB(16)
-        self.conv_out = ConvLayer(16, 3, kernel_size=3, stride=1)
-
-    def forward(self, x):
-        feat0 = self.RDB__e0(self.conv_e0(x))
-        feat1 = self.RDB__e1(self.conv_e1(feat0))
-        feat2 = self.RDB__e2(self.conv_e2(feat1))
-        feat3 = self.RDB__e3(self.conv_e3(feat2))
-        feat4 = self.RDB__e4(self.conv_e4(feat3))
-
-        feat = self.RDB__s1(feat4)
-        feat = self.RDB__s2(feat)
-
-        feat = self.RDB__d4(self.conv_d4(feat, feat3))
-        feat = self.RDB__d3(self.conv_d3(feat, feat2))
-        feat = self.RDB__d2(self.conv_d2(feat, feat1))
-        feat = self.RDB__d1(self.conv_d1(feat, feat0))
-        out = self.conv_out(feat)
-        return out
-
-            
-class Discriminator(nn.Module):
-    def __init__(self, in_channel=3):
-        super(Discriminator, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride = 2, padding=1)
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride = 2, padding=1)
-        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride = 2, padding=1)
-        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride = 2, padding=1)
-
-        self.bn2 = nn.BatchNorm2d(128)
-        self.bn3 = nn.BatchNorm2d(256)
-        self.bn4 = nn.BatchNorm2d(512)
-
-        self.conv1x1 = nn.Conv2d(512, 1, kernel_size=1, stride = 1, padding=0)
-
-    def forward(self, x):
-        feat1 = F.leaky_relu(self.conv1(x), negative_slope=0.2, inplace=True)
-        feat2 = F.leaky_relu(self.bn2(self.conv2(feat1)), negative_slope=0.2, inplace=True)
-        feat3 = F.leaky_relu(self.bn3(self.conv3(feat2)), negative_slope=0.2, inplace=True)
-        feat4 = F.leaky_relu(self.bn4(self.conv4(feat3)), negative_slope=0.2, inplace=True)
-        prob = self.conv1x1(feat4)
-        return prob
-
-class Deep_Discriminator(nn.Module):
-    def __init__(self):
-        super(Deep_Discriminator, self).__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(512, 512, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2),
-
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(512, 1024, kernel_size=1),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(1024, 1, kernel_size=1)
+##########################################################################
+## Channel Attention Layer
+class CALayer(nn.Module):
+    def __init__(self, channel, reduction=16, bias=False):
+        super(CALayer, self).__init__()
+        # global average pooling: feature --> point
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        # feature channel downscale and upscale --> channel weight
+        self.conv_du = nn.Sequential(
+                nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=bias),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=bias),
+                nn.Sigmoid()
         )
 
     def forward(self, x):
-        batch_size = x.size(0)
-        return torch.sigmoid(self.net(x).view(batch_size))
+        y = self.avg_pool(x)
+        y = self.conv_du(y)
+        return x * y
+
+
+##########################################################################
+## Channel Attention Block (CAB)
+class CAB(nn.Module):
+    def __init__(self, n_feat, kernel_size, reduction, bias, act):
+        super(CAB, self).__init__()
+        modules_body = []
+        modules_body.append(conv(n_feat, n_feat, kernel_size, bias=bias))
+        modules_body.append(act)
+        modules_body.append(conv(n_feat, n_feat, kernel_size, bias=bias))
+
+        self.CA = CALayer(n_feat, reduction, bias=bias)
+        self.body = nn.Sequential(*modules_body)
+
+    def forward(self, x):
+        res = self.body(x)
+        res = self.CA(res)
+        res += x
+        return res
+
+##########################################################################
+## Supervised Attention Module
+class SAM(nn.Module):
+    def __init__(self, n_feat, kernel_size, bias):
+        super(SAM, self).__init__()
+        self.conv1 = conv(n_feat, n_feat, kernel_size, bias=bias)
+        self.conv2 = conv(n_feat, 3, kernel_size, bias=bias)
+        self.conv3 = conv(3, n_feat, kernel_size, bias=bias)
+
+    def forward(self, x, x_img):
+        x1 = self.conv1(x)
+        img = self.conv2(x) + x_img
+        x2 = torch.sigmoid(self.conv3(img))
+        x1 = x1*x2
+        x1 = x1+x
+        return x1, img
+
+##########################################################################
+## U-Net
+
+class Encoder(nn.Module):
+    def __init__(self, n_feat, kernel_size, reduction, act, bias, scale_unetfeats, csff):
+        super(Encoder, self).__init__()
+
+        self.encoder_level1 = [CAB(n_feat,                     kernel_size, reduction, bias=bias, act=act) for _ in range(2)]
+        self.encoder_level2 = [CAB(n_feat+scale_unetfeats,     kernel_size, reduction, bias=bias, act=act) for _ in range(2)]
+        self.encoder_level3 = [CAB(n_feat+(scale_unetfeats*2), kernel_size, reduction, bias=bias, act=act) for _ in range(2)]
+
+        self.encoder_level1 = nn.Sequential(*self.encoder_level1)
+        self.encoder_level2 = nn.Sequential(*self.encoder_level2)
+        self.encoder_level3 = nn.Sequential(*self.encoder_level3)
+
+        self.down12  = DownSample(n_feat, scale_unetfeats)
+        self.down23  = DownSample(n_feat+scale_unetfeats, scale_unetfeats)
+
+        # Cross Stage Feature Fusion (CSFF)
+        if csff:
+            self.csff_enc1 = nn.Conv2d(n_feat,                     n_feat,                     kernel_size=1, bias=bias)
+            self.csff_enc2 = nn.Conv2d(n_feat+scale_unetfeats,     n_feat+scale_unetfeats,     kernel_size=1, bias=bias)
+            self.csff_enc3 = nn.Conv2d(n_feat+(scale_unetfeats*2), n_feat+(scale_unetfeats*2), kernel_size=1, bias=bias)
+
+            self.csff_dec1 = nn.Conv2d(n_feat,                     n_feat,                     kernel_size=1, bias=bias)
+            self.csff_dec2 = nn.Conv2d(n_feat+scale_unetfeats,     n_feat+scale_unetfeats,     kernel_size=1, bias=bias)
+            self.csff_dec3 = nn.Conv2d(n_feat+(scale_unetfeats*2), n_feat+(scale_unetfeats*2), kernel_size=1, bias=bias)
+
+    def forward(self, x, encoder_outs=None, decoder_outs=None):
+        enc1 = self.encoder_level1(x)
+        if (encoder_outs is not None) and (decoder_outs is not None):
+            enc1 = enc1 + self.csff_enc1(encoder_outs[0]) + self.csff_dec1(decoder_outs[0])
+
+        x = self.down12(enc1)
+
+        enc2 = self.encoder_level2(x)
+        if (encoder_outs is not None) and (decoder_outs is not None):
+            enc2 = enc2 + self.csff_enc2(encoder_outs[1]) + self.csff_dec2(decoder_outs[1])
+
+        x = self.down23(enc2)
+
+        enc3 = self.encoder_level3(x)
+        if (encoder_outs is not None) and (decoder_outs is not None):
+            enc3 = enc3 + self.csff_enc3(encoder_outs[2]) + self.csff_dec3(decoder_outs[2])
+        
+        return [enc1, enc2, enc3]
+
+class Decoder(nn.Module):
+    def __init__(self, n_feat, kernel_size, reduction, act, bias, scale_unetfeats):
+        super(Decoder, self).__init__()
+
+        self.decoder_level1 = [CAB(n_feat,                     kernel_size, reduction, bias=bias, act=act) for _ in range(2)]
+        self.decoder_level2 = [CAB(n_feat+scale_unetfeats,     kernel_size, reduction, bias=bias, act=act) for _ in range(2)]
+        self.decoder_level3 = [CAB(n_feat+(scale_unetfeats*2), kernel_size, reduction, bias=bias, act=act) for _ in range(2)]
+
+        self.decoder_level1 = nn.Sequential(*self.decoder_level1)
+        self.decoder_level2 = nn.Sequential(*self.decoder_level2)
+        self.decoder_level3 = nn.Sequential(*self.decoder_level3)
+
+        self.skip_attn1 = CAB(n_feat,                 kernel_size, reduction, bias=bias, act=act)
+        self.skip_attn2 = CAB(n_feat+scale_unetfeats, kernel_size, reduction, bias=bias, act=act)
+
+        self.up21  = SkipUpSample(n_feat, scale_unetfeats)
+        self.up32  = SkipUpSample(n_feat+scale_unetfeats, scale_unetfeats)
+
+    def forward(self, outs):
+        enc1, enc2, enc3 = outs
+        dec3 = self.decoder_level3(enc3)
+
+        x = self.up32(dec3, self.skip_attn2(enc2))
+        dec2 = self.decoder_level2(x)
+
+        x = self.up21(dec2, self.skip_attn1(enc1))
+        dec1 = self.decoder_level1(x)
+
+        return [dec1,dec2,dec3]
+
+##########################################################################
+##---------- Resizing Modules ----------    
+class DownSample(nn.Module):
+    def __init__(self, in_channels,s_factor):
+        super(DownSample, self).__init__()
+        self.down = nn.Sequential(nn.Upsample(scale_factor=0.5, mode='bilinear', align_corners=False),
+                                  nn.Conv2d(in_channels, in_channels+s_factor, 1, stride=1, padding=0, bias=False))
+
+    def forward(self, x):
+        x = self.down(x)
+        return x
+
+class UpSample(nn.Module):
+    def __init__(self, in_channels,s_factor):
+        super(UpSample, self).__init__()
+        self.up = nn.Sequential(nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+                                nn.Conv2d(in_channels+s_factor, in_channels, 1, stride=1, padding=0, bias=False))
+
+    def forward(self, x):
+        x = self.up(x)
+        return x
+
+class SkipUpSample(nn.Module):
+    def __init__(self, in_channels,s_factor):
+        super(SkipUpSample, self).__init__()
+        self.up = nn.Sequential(nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+                                nn.Conv2d(in_channels+s_factor, in_channels, 1, stride=1, padding=0, bias=False))
+
+    def forward(self, x, y):
+        x = self.up(x)
+        x = x + y
+        return x
+
+##########################################################################
+## Original Resolution Block (ORB)
+class ORB(nn.Module):
+    def __init__(self, n_feat, kernel_size, reduction, act, bias, num_cab):
+        super(ORB, self).__init__()
+        modules_body = []
+        modules_body = [CAB(n_feat, kernel_size, reduction, bias=bias, act=act) for _ in range(num_cab)]
+        modules_body.append(conv(n_feat, n_feat, kernel_size))
+        self.body = nn.Sequential(*modules_body)
+
+    def forward(self, x):
+        res = self.body(x)
+        res += x
+        return res
+
+##########################################################################
+class ORSNet(nn.Module):
+    def __init__(self, n_feat, scale_orsnetfeats, kernel_size, reduction, act, bias, scale_unetfeats, num_cab):
+        super(ORSNet, self).__init__()
+
+        self.orb1 = ORB(n_feat+scale_orsnetfeats, kernel_size, reduction, act, bias, num_cab)
+        self.orb2 = ORB(n_feat+scale_orsnetfeats, kernel_size, reduction, act, bias, num_cab)
+        self.orb3 = ORB(n_feat+scale_orsnetfeats, kernel_size, reduction, act, bias, num_cab)
+
+        self.up_enc1 = UpSample(n_feat, scale_unetfeats)
+        self.up_dec1 = UpSample(n_feat, scale_unetfeats)
+
+        self.up_enc2 = nn.Sequential(UpSample(n_feat+scale_unetfeats, scale_unetfeats), UpSample(n_feat, scale_unetfeats))
+        self.up_dec2 = nn.Sequential(UpSample(n_feat+scale_unetfeats, scale_unetfeats), UpSample(n_feat, scale_unetfeats))
+
+        self.conv_enc1 = nn.Conv2d(n_feat, n_feat+scale_orsnetfeats, kernel_size=1, bias=bias)
+        self.conv_enc2 = nn.Conv2d(n_feat, n_feat+scale_orsnetfeats, kernel_size=1, bias=bias)
+        self.conv_enc3 = nn.Conv2d(n_feat, n_feat+scale_orsnetfeats, kernel_size=1, bias=bias)
+
+        self.conv_dec1 = nn.Conv2d(n_feat, n_feat+scale_orsnetfeats, kernel_size=1, bias=bias)
+        self.conv_dec2 = nn.Conv2d(n_feat, n_feat+scale_orsnetfeats, kernel_size=1, bias=bias)
+        self.conv_dec3 = nn.Conv2d(n_feat, n_feat+scale_orsnetfeats, kernel_size=1, bias=bias)
+
+    def forward(self, x, encoder_outs, decoder_outs):
+        x = self.orb1(x)
+        x = x + self.conv_enc1(encoder_outs[0]) + self.conv_dec1(decoder_outs[0])
+
+        x = self.orb2(x)
+        x = x + self.conv_enc2(self.up_enc1(encoder_outs[1])) + self.conv_dec2(self.up_dec1(decoder_outs[1]))
+
+        x = self.orb3(x)
+        x = x + self.conv_enc3(self.up_enc2(encoder_outs[2])) + self.conv_dec3(self.up_dec2(decoder_outs[2]))
+
+        return x
+
+
+##########################################################################
+class MPRNet(nn.Module):
+    def __init__(self, in_c=3, out_c=3, n_feat=96, scale_unetfeats=48, scale_orsnetfeats=32, num_cab=8, kernel_size=3, reduction=4, bias=False):
+        super(MPRNet, self).__init__()
+
+        act=nn.PReLU()
+        self.shallow_feat1 = nn.Sequential(conv(in_c, n_feat, kernel_size, bias=bias), CAB(n_feat,kernel_size, reduction, bias=bias, act=act))
+        self.shallow_feat2 = nn.Sequential(conv(in_c, n_feat, kernel_size, bias=bias), CAB(n_feat,kernel_size, reduction, bias=bias, act=act))
+        self.shallow_feat3 = nn.Sequential(conv(in_c, n_feat, kernel_size, bias=bias), CAB(n_feat,kernel_size, reduction, bias=bias, act=act))
+
+        # Cross Stage Feature Fusion (CSFF)
+        self.stage1_encoder = Encoder(n_feat, kernel_size, reduction, act, bias, scale_unetfeats, csff=False)
+        self.stage1_decoder = Decoder(n_feat, kernel_size, reduction, act, bias, scale_unetfeats)
+
+        self.stage2_encoder = Encoder(n_feat, kernel_size, reduction, act, bias, scale_unetfeats, csff=True)
+        self.stage2_decoder = Decoder(n_feat, kernel_size, reduction, act, bias, scale_unetfeats)
+
+        self.stage3_orsnet = ORSNet(n_feat, scale_orsnetfeats, kernel_size, reduction, act, bias, scale_unetfeats, num_cab)
+
+        self.sam12 = SAM(n_feat, kernel_size=1, bias=bias)
+        self.sam23 = SAM(n_feat, kernel_size=1, bias=bias)
+        
+        self.concat12  = conv(n_feat*2, n_feat, kernel_size, bias=bias)
+        self.concat23  = conv(n_feat*2, n_feat+scale_orsnetfeats, kernel_size, bias=bias)
+        self.tail     = conv(n_feat+scale_orsnetfeats, out_c, kernel_size, bias=bias)
+
+    def forward(self, x3_img):
+        # Original-resolution Image for Stage 3
+        H = x3_img.size(2)
+        W = x3_img.size(3)
+
+        # Multi-Patch Hierarchy: Split Image into four non-overlapping patches
+
+        # Two Patches for Stage 2
+        x2top_img  = x3_img[:,:,0:int(H/2),:]
+        x2bot_img  = x3_img[:,:,int(H/2):H,:]
+
+        # Four Patches for Stage 1
+        x1ltop_img = x2top_img[:,:,:,0:int(W/2)]
+        x1rtop_img = x2top_img[:,:,:,int(W/2):W]
+        x1lbot_img = x2bot_img[:,:,:,0:int(W/2)]
+        x1rbot_img = x2bot_img[:,:,:,int(W/2):W]
+
+        ##-------------------------------------------
+        ##-------------- Stage 1---------------------
+        ##-------------------------------------------
+        ## Compute Shallow Features
+        x1ltop = self.shallow_feat1(x1ltop_img)
+        x1rtop = self.shallow_feat1(x1rtop_img)
+        x1lbot = self.shallow_feat1(x1lbot_img)
+        x1rbot = self.shallow_feat1(x1rbot_img)
+        
+        ## Process features of all 4 patches with Encoder of Stage 1
+        feat1_ltop = self.stage1_encoder(x1ltop)
+        feat1_rtop = self.stage1_encoder(x1rtop)
+        feat1_lbot = self.stage1_encoder(x1lbot)
+        feat1_rbot = self.stage1_encoder(x1rbot)
+        
+        ## Concat deep features
+        feat1_top = [torch.cat((k,v), 3) for k,v in zip(feat1_ltop,feat1_rtop)]
+        feat1_bot = [torch.cat((k,v), 3) for k,v in zip(feat1_lbot,feat1_rbot)]
+        
+        ## Pass features through Decoder of Stage 1
+        res1_top = self.stage1_decoder(feat1_top)
+        res1_bot = self.stage1_decoder(feat1_bot)
+
+        ## Apply Supervised Attention Module (SAM)
+        x2top_samfeats, stage1_img_top = self.sam12(res1_top[0], x2top_img)
+        x2bot_samfeats, stage1_img_bot = self.sam12(res1_bot[0], x2bot_img)
+
+        ## Output image at Stage 1
+        stage1_img = torch.cat([stage1_img_top, stage1_img_bot],2) 
+        ##-------------------------------------------
+        ##-------------- Stage 2---------------------
+        ##-------------------------------------------
+        ## Compute Shallow Features
+        x2top  = self.shallow_feat2(x2top_img)
+        x2bot  = self.shallow_feat2(x2bot_img)
+
+        ## Concatenate SAM features of Stage 1 with shallow features of Stage 2
+        x2top_cat = self.concat12(torch.cat([x2top, x2top_samfeats], 1))
+        x2bot_cat = self.concat12(torch.cat([x2bot, x2bot_samfeats], 1))
+
+        ## Process features of both patches with Encoder of Stage 2
+        feat2_top = self.stage2_encoder(x2top_cat, feat1_top, res1_top)
+        feat2_bot = self.stage2_encoder(x2bot_cat, feat1_bot, res1_bot)
+
+        ## Concat deep features
+        feat2 = [torch.cat((k,v), 2) for k,v in zip(feat2_top,feat2_bot)]
+
+        ## Pass features through Decoder of Stage 2
+        res2 = self.stage2_decoder(feat2)
+
+        ## Apply SAM
+        x3_samfeats, stage2_img = self.sam23(res2[0], x3_img)
+
+
+        ##-------------------------------------------
+        ##-------------- Stage 3---------------------
+        ##-------------------------------------------
+        ## Compute Shallow Features
+        x3     = self.shallow_feat3(x3_img)
+
+        ## Concatenate SAM features of Stage 2 with shallow features of Stage 3
+        x3_cat = self.concat23(torch.cat([x3, x3_samfeats], 1))
+        
+        x3_cat = self.stage3_orsnet(x3_cat, feat2, res2)
+
+        stage3_img = self.tail(x3_cat)
+
+        return [stage3_img+x3_img, stage2_img, stage1_img]
