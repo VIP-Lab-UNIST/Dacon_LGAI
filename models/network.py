@@ -208,6 +208,7 @@ class knowledge_adaptation_UNet(nn.Module):
         self.conv_process_1 = nn.Conv2d(44, 44, kernel_size=3,padding=1)
         self.conv_process_2 = nn.Conv2d(44, 28, kernel_size=3,padding=1)
         self.tail = nn.Sequential(nn.ReflectionPad2d(3), nn.Conv2d(28, 3, kernel_size=7, padding=0), nn.Tanh())
+    
     def forward(self, input):
         x_inital, x_layer1, x_layer2, x_output = self.encoder(input)
         x_mid = self.attention0(x_output)

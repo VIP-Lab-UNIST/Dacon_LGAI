@@ -22,29 +22,41 @@ class RestList(torch.utils.data.Dataset):
         self._make_list(out_name)
 
     def __getitem__(self, index):
-        np.random.seed()
-        random.seed()
+        # np.random.seed()
+        # random.seed()
 
         image = cv2.imread(join(self.data_dir, self.image_list[index]))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         data = []
-        if (self.phase == 'train'):
-            gt = cv2.imread(join(self.data_dir, self.gt_list[index]))
-            gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
-            data.extend([image, gt])
-        elif (self.phase == 'val'):
-            image_up = image[0:2432,:,:]
-            image_down = image[16:2448,:,:]
+        # only training data
+        division = 512
+        value_w = image.shape[0]//division
+        remainder_w = image.shape[0]%division
 
-            gt = cv2.imread(join(self.data_dir, self.gt_list[index]))
-            gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
-            data.extend([image_up, image_down, gt])
-        else:
-            image_up = image[0:2432,:,:]
-            image_down = image[16:2448,:,:]
-            data.extend([image_up, image_down, image])
+        value_h = image.shape[1]//division
+        remainder_h = image.shape[1]%division
+
+        image_up_left = image[0:value_w*division, 0:value_h*division, :]
+        image_up_right = image[0:value_w*division, remainder_h:image.shape[1], :]
+        
+        image_down_left = image[remainder_w:image.shape[0], 0:value_h*division , :]
+        image_down_right = image[remainder_w:image.shape[0], remainder_h:image.shape[1], :]
+
+        gt = cv2.imread(join(self.data_dir, self.gt_list[index]))
+        gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
+        data.extend([image_up_left, image_up_right, image_down_left, image_down_right, gt])
 
         data = tuple(data)
+        # print('**************************')
+        # print('index: ', index)
+        # print('name: ', basename(self.image_list[index]))
+        # print('image.shape: ', image.shape)
+        # print('value_w: ', value_w, 'remainder_w', remainder_w)
+        # print('value_h: ', value_h, 'remainder_h', remainder_h)
+        # print('image_up_left.shape: ', image_up_left.shape)
+        # print('image_up_right.shape: ', image_up_right.shape)
+        # print('image_down_left.shape: ', image_down_left.shape)
+        # print('image_down_right.shape: ', image_down_right.shape)
         data = (self.transform(*data))
 
         if self.out_name:
@@ -57,13 +69,14 @@ class RestList(torch.utils.data.Dataset):
 
     def _make_list(self, out_name):
         if self.phase=='train': 
-            self.image_list = sorted(glob(join(self.data_dir, '256_cropped/train_256/*.png')))
-            self.gt_list = sorted(glob(join(self.data_dir, '256_cropped/train_gt_256/*.png')))
-            assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
+            self.image_list = sorted(glob(join(self.data_dir, 'train_input/*.png')))
+            self.gt_list = sorted(glob(join(self.data_dir, 'train_input/*.png')))
         elif self.phase=='val' : 
             self.image_list = sorted(glob(join(self.data_dir, 'valid_input/*.png')))
             self.gt_list = sorted(glob(join(self.data_dir, 'valid_label/*.png')))
-            assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
         else:
             self.image_list = sorted(glob(join(self.data_dir, 'test_input/*.png')))
+            self.gt_list = sorted(glob(join(self.data_dir, 'test_input/*.png')))
+        assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
+        
         
