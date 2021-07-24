@@ -1,192 +1,219 @@
-import time
-import datetime
+# ------------------------------------------------------------------------
+# Copyright (c) 2021 megvii-model. All Rights Reserved.
+# ------------------------------------------------------------------------
+'''
+HINet: Half Instance Normalization Network for Image Restoration
+
+@inproceedings{chen2021hinet,
+  title={HINet: Half Instance Normalization Network for Image Restoration},
+  author={Liangyu Chen and Xin Lu and Jie Zhang and Xiaojie Chu and Chengpeng Chen},
+  booktitle={IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops},
+  year={2021}
+}
+'''
+
 import torch
-from torch import nn, optim
-from torch.nn import functional as F
-import numpy as np
+import torch.nn as nn
 
-# --- Build dense --- #
-class VanilaModule(nn.Module):
-    def __init__(self, in_channels, growth_rate, kernel_size=3):
-        super(VanilaModule, self).__init__()
-        self.conv = ConvLayer(in_channels, growth_rate, stride=1, kernel_size=3)
-        self.act = torch.nn.PReLU()
+def conv3x3(in_chn, out_chn, bias=True):
+    layer = nn.Conv2d(in_chn, out_chn, kernel_size=3, stride=1, padding=1, bias=bias)
+    return layer
+
+def conv_down(in_chn, out_chn, bias=False):
+    layer = nn.Conv2d(in_chn, out_chn, kernel_size=4, stride=2, padding=1, bias=bias)
+    return layer
+
+def conv(in_channels, out_channels, kernel_size, bias=False, stride = 1):
+    return nn.Conv2d(
+        in_channels, out_channels, kernel_size,
+        padding=(kernel_size//2), bias=bias, stride = stride)
+
+## Supervised Attention Module
+class SAM(nn.Module):
+    def __init__(self, n_feat, kernel_size=3, bias=True):
+        super(SAM, self).__init__()
+        self.conv1 = conv(n_feat, n_feat, kernel_size, bias=bias)
+        self.conv2 = conv(n_feat, 3, kernel_size, bias=bias)
+        self.conv3 = conv(3, n_feat, kernel_size, bias=bias)
+
+    def forward(self, x, x_img):
+        x1 = self.conv1(x)
+        img = self.conv2(x) + x_img
+        x2 = torch.sigmoid(self.conv3(img))
+        x1 = x1*x2
+        x1 = x1+x
+        return x1, img
+
+class HINet(nn.Module):
+
+    def __init__(self, in_chn=3, wf=64, depth=5, relu_slope=0.2, hin_position_left=0, hin_position_right=4):
+        super(HINet, self).__init__()
+        self.depth = depth
+        self.down_path_1 = nn.ModuleList()
+        self.down_path_2 = nn.ModuleList()
+        self.conv_01 = nn.Conv2d(in_chn, wf, 3, 1, 1)
+        self.conv_02 = nn.Conv2d(in_chn, wf, 3, 1, 1)
+
+        prev_channels = self.get_input_chn(wf)
+        for i in range(depth): #0,1,2,3,4
+            use_HIN = True if hin_position_left <= i and i <= hin_position_right else False
+            downsample = True if (i+1) < depth else False
+            self.down_path_1.append(UNetConvBlock(prev_channels, (2**i) * wf, downsample, relu_slope, use_HIN=use_HIN))
+            self.down_path_2.append(UNetConvBlock(prev_channels, (2**i) * wf, downsample, relu_slope, use_csff=downsample, use_HIN=use_HIN))
+            prev_channels = (2**i) * wf
+
+        self.up_path_1 = nn.ModuleList()
+        self.up_path_2 = nn.ModuleList()
+        self.skip_conv_1 = nn.ModuleList()
+        self.skip_conv_2 = nn.ModuleList()
+        for i in reversed(range(depth - 1)):
+            self.up_path_1.append(UNetUpBlock(prev_channels, (2**i)*wf, relu_slope))
+            self.up_path_2.append(UNetUpBlock(prev_channels, (2**i)*wf, relu_slope))
+            self.skip_conv_1.append(nn.Conv2d((2**i)*wf, (2**i)*wf, 3, 1, 1))
+            self.skip_conv_2.append(nn.Conv2d((2**i)*wf, (2**i)*wf, 3, 1, 1))
+            prev_channels = (2**i)*wf
+        self.sam12 = SAM(prev_channels)
+        self.cat12 = nn.Conv2d(prev_channels*2, prev_channels, 1, 1, 0)
+
+        self.last = conv3x3(prev_channels, in_chn, bias=True)
 
     def forward(self, x):
-        out = self.act(self.conv(x))
-        out = torch.cat((x,out), dim=1)
+        image = x
+        #stage 1
+        x1 = self.conv_01(image)
+        encs = []
+        decs = []
+        for i, down in enumerate(self.down_path_1):
+            if (i+1) < self.depth:
+                x1, x1_up = down(x1)
+                encs.append(x1_up)
+            else:
+                x1 = down(x1)
+
+        for i, up in enumerate(self.up_path_1):
+            x1 = up(x1, self.skip_conv_1[i](encs[-i-1]))
+            decs.append(x1)
+
+        sam_feature, out_1 = self.sam12(x1, image)
+        #stage 2
+        x2 = self.conv_02(image)
+        x2 = self.cat12(torch.cat([x2, sam_feature], dim=1))
+        blocks = []
+        for i, down in enumerate(self.down_path_2):
+            if (i+1) < self.depth:
+                x2, x2_up = down(x2, encs[i], decs[-i-1])
+                blocks.append(x2_up)
+            else:
+                x2 = down(x2)
+
+        for i, up in enumerate(self.up_path_2):
+            x2 = up(x2, self.skip_conv_2[i](blocks[-i-1]))
+
+        out_2 = self.last(x2)
+        out_2 = out_2 + image
+        return [out_1, out_2]
+
+    def get_input_chn(self, in_chn):
+        return in_chn
+
+    def _initialize(self):
+        gain = nn.init.calculate_gain('leaky_relu', 0.20)
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.orthogonal_(m.weight, gain=gain)
+                if not m.bias is None:
+                    nn.init.constant_(m.bias, 0)
+
+
+class UNetConvBlock(nn.Module):
+    def __init__(self, in_size, out_size, downsample, relu_slope, use_csff=False, use_HIN=False):
+        super(UNetConvBlock, self).__init__()
+        self.downsample = downsample
+        self.identity = nn.Conv2d(in_size, out_size, 1, 1, 0)
+        self.use_csff = use_csff
+
+        self.conv_1 = nn.Conv2d(in_size, out_size, kernel_size=3, padding=1, bias=True)
+        self.relu_1 = nn.LeakyReLU(relu_slope, inplace=False)
+        self.conv_2 = nn.Conv2d(out_size, out_size, kernel_size=3, padding=1, bias=True)
+        self.relu_2 = nn.LeakyReLU(relu_slope, inplace=False)
+
+        if downsample and use_csff:
+            self.csff_enc = nn.Conv2d(out_size, out_size, 3, 1, 1)
+            self.csff_dec = nn.Conv2d(out_size, out_size, 3, 1, 1)
+
+        if use_HIN:
+            self.norm = nn.InstanceNorm2d(out_size//2, affine=True)
+        self.use_HIN = use_HIN
+
+        if downsample:
+            self.downsample = conv_down(out_size, out_size, bias=False)
+
+    def forward(self, x, enc=None, dec=None):
+        out = self.conv_1(x)
+
+        if self.use_HIN:
+            out_1, out_2 = torch.chunk(out, 2, dim=1)
+            out = torch.cat([self.norm(out_1), out_2], dim=1)
+        out = self.relu_1(out)
+        out = self.relu_2(self.conv_2(out))
+
+        out += self.identity(x)
+        if enc is not None and dec is not None:
+            assert self.use_csff
+            out = out + self.csff_enc(enc) + self.csff_dec(dec)
+        if self.downsample:
+            out_down = self.downsample(out)
+            return out_down, out
+        else:
+            return out
+
+
+class UNetUpBlock(nn.Module):
+    def __init__(self, in_size, out_size, relu_slope):
+        super(UNetUpBlock, self).__init__()
+        self.up = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2, bias=True)
+        self.conv_block = UNetConvBlock(in_size, out_size, False, relu_slope)
+
+    def forward(self, x, bridge):
+        up = self.up(x)
+        out = torch.cat([up, bridge], 1)
+        out = self.conv_block(out)
         return out
 
-# --- Build the Residual Dense Block --- #
-class RDB(nn.Module):
-    def __init__(self, in_channels):
-        super(RDB, self).__init__()
-        _in_channels = in_channels
-        growth_rate = in_channels // 2
-        modules = []
-        for i in range(4):
-            modules.append(VanilaModule(_in_channels, growth_rate))
-            _in_channels += growth_rate
-        self.residual_dense_layers = nn.Sequential(*modules)
-        self.conv_1x1 = nn.Conv2d(_in_channels, in_channels, kernel_size=1, padding=0)
+class Subspace(nn.Module):
+
+    def __init__(self, in_size, out_size):
+        super(Subspace, self).__init__()
+        self.blocks = nn.ModuleList()
+        self.blocks.append(UNetConvBlock(in_size, out_size, False, 0.2))
+        self.shortcut = nn.Conv2d(in_size, out_size, kernel_size=1, bias=True)
 
     def forward(self, x):
-        out = self.residual_dense_layers(x)
-        out = self.conv_1x1(out)
-        out = out + x
-        return out
+        sc = self.shortcut(x)
+        for i in range(len(self.blocks)):
+            x = self.blocks[i](x)
+        return x + sc
 
-class ConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride):
-        super(ConvLayer, self).__init__()
-        reflection_padding = kernel_size // 2
-        self.reflection_pad = nn.ReflectionPad2d(reflection_padding)
-        self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride)
 
-    def forward(self, x):
-        out = self.reflection_pad(x)
-        out = self.conv2d(out)
-        return out
+class skip_blocks(nn.Module):
 
-class ResidualBlock(torch.nn.Module):
-    def __init__(self, channels):
-        super(ResidualBlock, self).__init__()
-        self.conv1 = ConvLayer(channels, channels, kernel_size=3, stride=1)
-        self.conv2 = ConvLayer(channels, channels, kernel_size=3, stride=1)
-        self.relu = nn.PReLU()
+    def __init__(self, in_size, out_size, repeat_num=1):
+        super(skip_blocks, self).__init__()
+        self.blocks = nn.ModuleList()
+        self.re_num = repeat_num
+        mid_c = 128
+        self.blocks.append(UNetConvBlock(in_size, mid_c, False, 0.2))
+        for i in range(self.re_num - 2):
+            self.blocks.append(UNetConvBlock(mid_c, mid_c, False, 0.2))
+        self.blocks.append(UNetConvBlock(mid_c, out_size, False, 0.2))
+        self.shortcut = nn.Conv2d(in_size, out_size, kernel_size=1, bias=True)
 
     def forward(self, x):
-        residual = x
-        out = self.relu(self.conv1(x))
-        out = self.conv2(out) * 0.1
-        out = torch.add(out, residual)
-        return out
-        
+        sc = self.shortcut(x)
+        for m in self.blocks:
+            x = m(x)
+        return x + sc
 
-class UpsampleConvLayer(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(UpsampleConvLayer, self).__init__()
-        self.reflection_pad = nn.ReflectionPad2d(1)
-        self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.conv2d = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1)
 
-    def forward(self, x, y):
-        x_up = F.interpolate(x, size=(y.size(2), y.size(3)), mode='bilinear')
-        x_up = self.conv1x1(x_up)
-        out = x_up + y
-        out = self.reflection_pad(out)
-        out = self.conv2d(out)
-        return out
-
-# --- Main model  --- #
-class Baseline(nn.Module):
-    def __init__(self):
-        super(Baseline, self).__init__()
-        self.conv_e0 = ConvLayer(3, 16, kernel_size=11, stride=1) # H, W
-        self.RDB__e0 = RDB(16)
-        self.conv_e1 = ConvLayer(16, 32, kernel_size=3, stride=2) # H/2, W/2
-        self.RDB__e1 = RDB(32)
-        self.conv_e2 = ConvLayer(32, 64, kernel_size=3, stride=2) # H/4, W/4
-        self.RDB__e2 = RDB(64)
-        self.conv_e3 = ConvLayer(64, 128, kernel_size=3, stride=2) # H/8, W/8
-        self.RDB__e3 = RDB(128)
-        self.conv_e4 = ConvLayer(128, 256, kernel_size=3, stride=2) # H/16, W/16
-        self.RDB__e4 = RDB(256)
-
-        self.RDB__s1 = RDB(256)
-        self.RDB__s2 = RDB(256)
-
-        self.conv_d4 = UpsampleConvLayer(256, 128) # H/8, W/8
-        self.RDB__d4 = RDB(128)
-        self.conv_d3 = UpsampleConvLayer(128, 64) # H/4, W/4
-        self.RDB__d3 = RDB(64)
-        self.conv_d2 = UpsampleConvLayer(64, 32) # H/2, W/2
-        self.RDB__d2 = RDB(32)
-        self.conv_d1 = UpsampleConvLayer(32, 16) # H, W
-        self.RDB__d1 = RDB(16)
-        self.conv_out = ConvLayer(16, 3, kernel_size=3, stride=1)
-
-    def forward(self, x):
-        feat0 = self.RDB__e0(self.conv_e0(x))
-        feat1 = self.RDB__e1(self.conv_e1(feat0))
-        feat2 = self.RDB__e2(self.conv_e2(feat1))
-        feat3 = self.RDB__e3(self.conv_e3(feat2))
-        feat4 = self.RDB__e4(self.conv_e4(feat3))
-
-        feat = self.RDB__s1(feat4)
-        feat = self.RDB__s2(feat)
-
-        feat = self.RDB__d4(self.conv_d4(feat, feat3))
-        feat = self.RDB__d3(self.conv_d3(feat, feat2))
-        feat = self.RDB__d2(self.conv_d2(feat, feat1))
-        feat = self.RDB__d1(self.conv_d1(feat, feat0))
-        out = self.conv_out(feat)
-        return out
-
-            
-class Discriminator(nn.Module):
-    def __init__(self, in_channel=3):
-        super(Discriminator, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride = 2, padding=1)
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride = 2, padding=1)
-        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride = 2, padding=1)
-        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride = 2, padding=1)
-
-        self.bn2 = nn.BatchNorm2d(128)
-        self.bn3 = nn.BatchNorm2d(256)
-        self.bn4 = nn.BatchNorm2d(512)
-
-        self.conv1x1 = nn.Conv2d(512, 1, kernel_size=1, stride = 1, padding=0)
-
-    def forward(self, x):
-        feat1 = F.leaky_relu(self.conv1(x), negative_slope=0.2, inplace=True)
-        feat2 = F.leaky_relu(self.bn2(self.conv2(feat1)), negative_slope=0.2, inplace=True)
-        feat3 = F.leaky_relu(self.bn3(self.conv3(feat2)), negative_slope=0.2, inplace=True)
-        feat4 = F.leaky_relu(self.bn4(self.conv4(feat3)), negative_slope=0.2, inplace=True)
-        prob = self.conv1x1(feat4)
-        return prob
-
-class Deep_Discriminator(nn.Module):
-    def __init__(self):
-        super(Deep_Discriminator, self).__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2),
-
-            nn.Conv2d(512, 512, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2),
-
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(512, 1024, kernel_size=1),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(1024, 1, kernel_size=1)
-        )
-
-    def forward(self, x):
-        batch_size = x.size(0)
-        return torch.sigmoid(self.net(x).view(batch_size))
+if __name__ == "__main__":
+    pass
