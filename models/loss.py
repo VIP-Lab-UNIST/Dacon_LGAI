@@ -217,5 +217,5 @@ class PSNRLoss(nn.Module):
             pass
         assert len(pred.size()) == 4
 
-        return self.loss_weight * self.scale * torch.log(((pred - target) ** 2).mean(dim=(1, 2, 3)) + 1e-8).mean()
+        return self.loss_weight * self.scale * torch.log(((pred - target) ** 2).mean(dim=(1, 2, 3)) + 1e-6).mean()
 

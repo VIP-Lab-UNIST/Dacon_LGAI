@@ -9,5 +9,7 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py train \
                                 --save-dir ./logs/train/khko_HINet/loss/PSNRLoss/CosineAnnealingWarmRestarts
                                 # --save-dir ./logs/tmp/
 
+                                # MultiStepLR
+                                # CosineAnnealingWarmRestarts
                                 # --resume ./logs/others/HINet/HINet-GoPro.pth \
                                 # --save-dir ./logs/train/basline/

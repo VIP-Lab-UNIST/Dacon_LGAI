@@ -99,7 +99,7 @@ def run(args, saveDirName='.', logger=None):
         for epoch in range(start_epoch, args.epochs):
             logger.info('Epoch: [{0}]\t Gen lr {1:.06f}'.format(epoch, gen_optim.param_groups[0]['lr']))
             ## train the network
-            train_losses = train(train_loader, gen, gen_optim, criterion, epoch, saveDirName, eval_score=psnr, logger=logger)        
+            train_losses = train(train_loader, gen, gen_optim, criterion, epoch+1, saveDirName, eval_score=psnr, logger=logger)        
 
             ## validate the network
             val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger, phase='val')
