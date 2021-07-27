@@ -60,21 +60,21 @@ def run(args, saveDirName='.', logger=None):
     #######################################
 
     gen = HINet(wf=64, hin_position_left=3, hin_position_right=4)
+    if args.resume is not None:
+        state = torch.load(args.resume)
+        gen.load_state_dict(state['params'])
+        # start_epoch = state['epoch']
+        # gen.load_state_dict(state['gen'])
+        # gen_optim.load_state_dict(state['gen_optim'])
+        # gen_scheduler.load_state_dict(state['gen_scheduler'])
+        logger.info('Complete the resume for Knowledge transfer!')
+    start_epoch = 0
+
     gen = torch.nn.DataParallel(gen).cuda()
     gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
 
-    # gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
-    gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=1e-7)
-
-    if args.resume is not None:
-        state = torch.load(args.resume)
-        start_epoch = state['epoch']
-        gen.load_state_dict(state['gen'])
-        gen_optim.load_state_dict(state['gen_optim'])
-        gen_scheduler.load_state_dict(state['gen_scheduler'])
-        print('Complete the resume!')
-    else:
-        start_epoch = 0
+    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50, 60], gamma=0.5)
+    # gen_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(gen_optim, T_0=20, T_mult=1, eta_min=1e-7)
 
     #######################################
     # (4) Define loss function
