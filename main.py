@@ -42,18 +42,18 @@ def run(args, saveDirName='.', logger=None):
     train_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'train', transforms.Compose(t_super)),
         batch_size=batch_size, shuffle=True, num_workers=8,
-        pin_memory=True, drop_last=False)
+        pin_memory=False, drop_last=False)
 
     t = [transforms.ToTensor()]
     val_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'val', transforms.Compose(t), out_name=True),
         batch_size=1, shuffle=False, num_workers=8,
-        pin_memory=True, drop_last=False)
+        pin_memory=False, drop_last=False)
 
     test_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'test', transforms.Compose(t), out_name=True),
         batch_size=1, shuffle=False, num_workers=8,
-        pin_memory=True, drop_last=False)
+        pin_memory=False, drop_last=False)
 
     #######################################
     # (3) Initialize neural netowrk and optimizer
@@ -66,22 +66,27 @@ def run(args, saveDirName='.', logger=None):
 
     dis = Discriminator()
     dis = torch.nn.DataParallel(dis).cuda()
-    dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
+    dis_optim = torch.optim.Adam(dis.parameters(), args.lr*1e1)
     dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[30, 50], gamma=0.5)
     
     if args.resume is not None:
         state = torch.load(args.resume)
-        start_epoch = state['epoch']
-        gen.load_state_dict(state['gen'])
+        gen.load_state_dict(state)
+        
+        # state = torch.load(args.resume)
+        # start_epoch = state['epoch']
+        # gen.load_state_dict(state['gen'])
         # gen_optim.load_state_dict(state['gen_optim'])
         # gen_scheduler.load_state_dict(state['gen_scheduler'])
 
-        dis.load_state_dict(state['dis'])
+        # dis.load_state_dict(state['dis'])
         # dis_optim.load_state_dict(state['dis_optim'])
         # dis_scheduler.load_state_dict(state['dis_scheduler'])
         print('Complete the resume')
-    else:
-        start_epoch = 0
+
+    start_epoch = 0
+    # gen = torch.nn.DataParallel(gen).cuda()
+    # dis = torch.nn.DataParallel(dis).cuda()
 
     #######################################
     # (4) Define loss function
