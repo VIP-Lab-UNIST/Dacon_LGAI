@@ -134,8 +134,8 @@ def run(args, saveDirName='.', logger=None):
             plot_lrs(plot_epochs, plot_lrs_gen, os.path.join(saveDirName, 'lrs.jpg'))
 
     else :  
-        val_score = validate(val_loader, gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
-        # val_score = validate(test_loader, gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
+        val_score = validate(test_loader, gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
+        # val_score = validate(val_loader, gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
 
 def parse_args():
     # Training settings

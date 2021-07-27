@@ -57,4 +57,6 @@ class RestList(torch.utils.data.Dataset):
             self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_label/*.png'))
             assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
         else:
-            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/test_input/*.png'))
+            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets_delight/test/*.png'))
+            self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets_delight/test/*.png'))
+            assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
