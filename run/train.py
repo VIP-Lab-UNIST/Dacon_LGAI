@@ -3,7 +3,7 @@ import time
 from tqdm import tqdm
 from lib.utils.util import AverageMeter
 
-def train(train_loader, models, optims, criterions, gan_weight, eval_score=None, print_freq=10, logger=None):
+def train(train_loader, models, optims, criterions, epoch, output_path, gan_weight, eval_score=None, print_freq=10, logger=None):
     
     #######################################
     # (1) Initialize    
@@ -14,19 +14,17 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
     losses = AverageMeter()
 
     # Model
-    model = models[0]
-    dis_model = models[1]
-    model.train()
-    dis_model.train()
+    Gen, Dis = models
+    Gen.train()
+    Dis.train()
+
     # Optimizer
-    optim = optims[0]
-    dis_optim = optims[1]
+    optim_Gen, optim_Dis = optims
+
     # Criterions
-    criterion = criterions[0]
-    dis_criterion = criterions[1]
+    criterionPix, criterionGAN = criterions
 
     end = time.time()
-    
     #######################################
     # (2) Training
     #######################################
@@ -34,7 +32,7 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
     base_losses = []
     gan_losses = []
     total_losses = []
-    for i, (inputs, gts) in enumerate(tqdm(train_loader, desc="Training iteration")):
+    for i, (inputs, gts) in enumerate(tqdm(train_loader, desc="Epoch: {:d} Output: {}".format(epoch, output_path))):
         data_time.update(time.time() - end)
 
         ## loading image pairs
@@ -42,24 +40,24 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
         gts = gts.float().cuda()
 
         ## feed-forward the data into network
-        outs = model(inputs)        
-        optim.zero_grad()
-        dis_optim.zero_grad()
+        outs = Gen(inputs)   
+        optim_Gen.zero_grad()
+        optim_Dis.zero_grad()
         
         ## Calculate the loss
-        ## Base loss
-        loss = criterion(outs, gts)
-        ## GAN loss
-        dis_loss = dis_criterion(gts, target_is_real=True) + dis_criterion(dis_model(outs.detach()), target_is_real=False)
-        gen_loss = dis_criterion(dis_model(outs), target_is_real=True)
-        ## Total loss
+        # pixel loss
+        loss = criterionPix(outs, gts)
+        # gan loss
+        dis_loss = criterionGAN(Dis(gts), target_is_real=True) + criterionGAN(Dis(outs.detach()), target_is_real=False)
+        gen_loss = criterionGAN(Dis(outs), target_is_real=True)
+        # total loss
         total_loss = loss+gan_weight*(dis_loss+gen_loss)
         losses.update(total_loss.data, inputs.size(0))
         
         ## backward and update the network
         total_loss.backward()
-        optim.step()
-        dis_optim.step()
+        optim_Gen.step()
+        optim_Dis.step()
 
         batch_time.update(time.time() - end)
         end = time.time()
