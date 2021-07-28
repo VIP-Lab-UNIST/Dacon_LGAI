@@ -8,7 +8,7 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py train \
                                 --perc_weight 0.001 \
                                 --gan_weight 0.01 \
                                 --save-dir ./logs/tmp/
-                                # --save-dir ./logs/train/baseline/deep_discriminator/
+                                # --save-dir ./logs/train/baseline/
                                 # --resume ../Others/MSBDN-DFF/models/model.pkl \
 
                                 # --save-dir ./logs/train/basline/

@@ -164,7 +164,7 @@ def plot_losses(iters, losses, path):
 def plot_scores(epochs, scores, path):
     plt.plot(epochs, scores, 'r')
     plt.xlabel('Epochs')
-    plt.yticks(np.arange(10,35,step=5))
+    plt.yticks(np.arange(20,40,step=5))
     plt.ylabel('Scores')
     plt.grid()
     plt.savefig(path)
