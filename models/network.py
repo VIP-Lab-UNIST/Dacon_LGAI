@@ -407,11 +407,11 @@ class make_dense(nn.Module):
 
 
 class ConvLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding_mode = 'zeros'):
         super(ConvLayer, self).__init__()
         reflection_padding = kernel_size // 2
         self.reflection_pad = nn.ReflectionPad2d(reflection_padding)
-        self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride)
+        self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding_mode = padding_mode)
 
     def forward(self, x):
         out = self.reflection_pad(x)
@@ -493,6 +493,7 @@ class MSBDN(nn.Module):
         # self.convd16x = UpsampleConvLayer(256, 128, kernel_size=3, stride=2)
         self.convd16x = ConvLayer(256, 512, kernel_size=1, stride=1)
         self.attention4 = CP_Attention_block(default_conv, 128, 3)
+        self.shortcut4 = ConvLayer(128, 128, kernel_size=3, stride=1, padding_mode = 'same')
         self.dense_4 = nn.Sequential(
             ResidualBlock(128),
             ResidualBlock(128),
@@ -503,6 +504,7 @@ class MSBDN(nn.Module):
         # self.convd8x = UpsampleConvLayer(128, 64, kernel_size=3, stride=2)
         self.convd8x = ConvLayer(128, 256, kernel_size=1, stride=1)
         self.attention3 = CP_Attention_block(default_conv, 64, 3)
+        self.shortcut3 = ConvLayer(64, 64, kernel_size=3, stride=1, padding_mode = 'same')
         self.dense_3 = nn.Sequential(
             ResidualBlock(64),
             ResidualBlock(64),
@@ -513,6 +515,7 @@ class MSBDN(nn.Module):
         # self.convd4x = UpsampleConvLayer(64, 32, kernel_size=3, stride=2)
         self.convd4x = ConvLayer(64, 128, kernel_size=1, stride=1)
         self.attention2 = CP_Attention_block(default_conv, 32, 3)
+        self.shortcut2 = ConvLayer(32, 32, kernel_size=3, stride=1, padding_mode = 'same')
         self.dense_2 = nn.Sequential(
             ResidualBlock(32),
             ResidualBlock(32),
@@ -523,6 +526,7 @@ class MSBDN(nn.Module):
         # self.convd2x = UpsampleConvLayer(32, 16, kernel_size=3, stride=2)
         self.convd2x = ConvLayer(32, 64, kernel_size=1, stride=1)
         self.attention1 = CP_Attention_block(default_conv, 16, 3)
+        self.shortcut1 = ConvLayer(16, 16, kernel_size=3, stride=1, padding_mode = 'same')
         self.dense_1 = nn.Sequential(
             ResidualBlock(16),
             ResidualBlock(16),
@@ -570,7 +574,7 @@ class MSBDN(nn.Module):
         res16x = self.attention4(res16x)
         # res16x = self.convd16x(res16x)
         # res16x = F.upsample(res16x, res8x.size()[2:], mode='bilinear')
-        res8x = torch.add(res16x, res8x)
+        res8x = torch.add(res16x, self.shortcut4(res8x))
         res8x = self.dense_4(res8x) + res8x - res16x 
         res8x = self.fusion_4(res8x, feature_mem_up)
         feature_mem_up.append(res8x)
@@ -581,7 +585,7 @@ class MSBDN(nn.Module):
         res8x = self.attention3(res8x)
         # res8x = self.convd8x(res8x)
         # res8x = F.upsample(res8x, res4x.size()[2:], mode='bilinear')
-        res4x = torch.add(res8x, res4x)
+        res4x = torch.add(res8x, self.shortcut3(res4x))
         res4x = self.dense_3(res4x) + res4x - res8x
         res4x = self.fusion_3(res4x, feature_mem_up)
         feature_mem_up.append(res4x)
@@ -591,7 +595,7 @@ class MSBDN(nn.Module):
         res4x = self.attention2(res4x)
         # res4x = self.convd4x(res4x)
         # res4x = F.upsample(res4x, res2x.size()[2:], mode='bilinear')
-        res2x = torch.add(res4x, res2x)
+        res2x = torch.add(res4x, self.shortcut2(res2x))
         res2x = self.dense_2(res2x) + res2x - res4x 
         res2x = self.fusion_2(res2x, feature_mem_up)
         feature_mem_up.append(res2x)
@@ -601,7 +605,7 @@ class MSBDN(nn.Module):
         res2x = self.attention1(res2x)
         # res2x = self.convd2x(res2x)
         # res2x = F.upsample(res2x, x.size()[2:], mode='bilinear')
-        x = torch.add(res2x, x)
+        x = torch.add(res2x, self.shortcut1(x))
         x = self.dense_1(x) + x - res2x 
         x = self.fusion_1(x, feature_mem_up)
 
