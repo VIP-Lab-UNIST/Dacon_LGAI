@@ -62,12 +62,12 @@ def run(args, saveDirName='.', logger=None):
     gen = fusion_net()
     gen = torch.nn.DataParallel(gen).cuda()
     gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
-    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[30, 50], gamma=0.5)
+    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[300, 600, 900], gamma=0.7)
 
     dis = Discriminator()
     dis = torch.nn.DataParallel(dis).cuda()
     dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
-    dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[30, 50], gamma=0.5)
+    dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[300, 600, 900], gamma=0.7)
     
     if args.resume is not None:
         state = torch.load(args.resume)
@@ -108,20 +108,22 @@ def run(args, saveDirName='.', logger=None):
             logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, lr))
             ## train the network
             train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], args.gan_weight, eval_score=psnr, logger=logger)        
-            ## validate the network
-            val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger, phase='val')
+            
+            if epoch%20 == 0:
+                ## validate the network
+                val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch+1, logger=logger, phase='val')
 
-            ## save the neural network
-            history_path_g = os.path.join(saveDirName, 'checkpoint_{:03d}'.format(epoch + 1)+'.tar')
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'gen': gen.state_dict(),
-                'dis': dis.state_dict(),
-                'gen_optim': gen_optim.state_dict(),
-                'dis_optim': dis_optim.state_dict(),
-                'gen_scheduler': gen_scheduler.state_dict(),
-                'dis_scheduler': dis_scheduler.state_dict(),
-            }, True, filename=history_path_g)
+                ## save the neural network
+                history_path_g = os.path.join(saveDirName, 'checkpoint_{:03d}'.format(epoch + 1)+'.tar')
+                save_checkpoint({
+                    'epoch': epoch + 1,
+                    'gen': gen.state_dict(),
+                    'dis': dis.state_dict(),
+                    'gen_optim': gen_optim.state_dict(),
+                    'dis_optim': dis_optim.state_dict(),
+                    'gen_scheduler': gen_scheduler.state_dict(),
+                    'dis_scheduler': dis_scheduler.state_dict(),
+                }, True, filename=history_path_g)
 
             gen_scheduler.step()
             dis_scheduler.step()

@@ -6,3 +6,4 @@ logs
 tmp.py
 **/*.png
 ImageNet.pth
+*nfs*
