@@ -114,46 +114,47 @@ def run(args, saveDirName='.', logger=None):
             logger.info('Epoch: [{0}]\t Gen lr {1:.06f}\t Dis lr {1:.06f}'.format(epoch, optim_Gen.param_groups[0]['lr'], optim_Dis.param_groups[0]['lr']))
             ## train the network
             train_losses = train(train_loader, models, optims, criterions, epoch, saveDirName, args.gan_weight, eval_score=psnr, logger=logger)        
-            ## validate the network
-            val_score = validate(val_loader, Gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch, logger=logger, phase='val')
+            if epoch%20 == 0:
+                ## validate the network
+                val_score = validate(val_loader, Gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch, logger=logger, phase='val')
 
-            ## save the neural network
-            history_path_g = os.path.join(saveDirName, 'checkpoint_{:03d}'.format(epoch)+'.tar')
-            save_checkpoint({
-                'epoch': epoch,
-                'Gen': Gen.state_dict(),
-                'Dis': Dis.state_dict(),
-                'optim_Gen': optim_Gen.state_dict(),
-                'optim_Dis': optim_Dis.state_dict(),
-                'scheduler_Gen': scheduler_Gen.state_dict(),
-                'scheduler_Dis': scheduler_Dis.state_dict(),
-            }, True, filename=history_path_g)
+                ## save the neural network
+                history_path_g = os.path.join(saveDirName, 'checkpoint_{:03d}'.format(epoch)+'.tar')
+                save_checkpoint({
+                    'epoch': epoch,
+                    'Gen': Gen.state_dict(),
+                    'Dis': Dis.state_dict(),
+                    'optim_Gen': optim_Gen.state_dict(),
+                    'optim_Dis': optim_Dis.state_dict(),
+                    'scheduler_Gen': scheduler_Gen.state_dict(),
+                    'scheduler_Dis': scheduler_Dis.state_dict(),
+                }, True, filename=history_path_g)
 
-            ## step the scheduler
-            scheduler_Gen.step()
-            scheduler_Dis.step()
+                ## step the scheduler
+                scheduler_Gen.step()
+                scheduler_Dis.step()
 
-            #######################################
-            # (6) Plotting
-            #######################################
-            plot_iters.extend(list(map(lambda x: epoch*len(train_loader)+x, train_losses[0])))
-            plot_total_losses.extend(train_losses[1])
-            plot_gan_losses.extend(train_losses[2])
-            plot_pix_losses.extend(train_losses[3])
-            plot_epochs.append(epoch)
-            plot_val_scores.append(val_score.item())
-            
-            plot_lrs_Gen.append(optim_Gen.param_groups[0]['lr'])
-            plot_lrs_Dis.append(optim_Dis.param_groups[0]['lr'])
+                #######################################
+                # (6) Plotting
+                #######################################
+                plot_iters.extend(list(map(lambda x: epoch*len(train_loader)+x, train_losses[0])))
+                plot_total_losses.extend(train_losses[1])
+                plot_gan_losses.extend(train_losses[2])
+                plot_pix_losses.extend(train_losses[3])
+                plot_epochs.append(epoch)
+                plot_val_scores.append(val_score.item())
+                
+                plot_lrs_Gen.append(optim_Gen.param_groups[0]['lr'])
+                plot_lrs_Dis.append(optim_Dis.param_groups[0]['lr'])
 
-            ## Loss
-            plot_losses(plot_iters, [plot_total_losses, plot_pix_losses, plot_gan_losses], os.path.join(saveDirName, 'losses.jpg'))
+                ## Loss
+                plot_losses(plot_iters, [plot_total_losses, plot_pix_losses, plot_gan_losses], os.path.join(saveDirName, 'losses.jpg'))
 
-            ## Scores
-            plot_scores(plot_epochs, plot_val_scores, os.path.join(saveDirName, 'scores.jpg'))
-            
-            ## Learning rate
-            plot_lrs(plot_epochs, [plot_lrs_Gen, plot_lrs_Dis], os.path.join(saveDirName, 'lrs.jpg'))
+                ## Scores
+                plot_scores(plot_epochs, plot_val_scores, os.path.join(saveDirName, 'scores.jpg'))
+                
+                ## Learning rate
+                plot_lrs(plot_epochs, [plot_lrs_Gen, plot_lrs_Dis], os.path.join(saveDirName, 'lrs.jpg'))
 
     else :  
         val_score = validate(test_loader, Gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
