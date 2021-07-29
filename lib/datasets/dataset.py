@@ -47,13 +47,15 @@ class RestList(torch.utils.data.Dataset):
 
     def _make_list(self, out_name):
         if self.phase=='train': 
-            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets_delight/train_256/*.png'))
+            # self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets_delight/train_256/*.png'))
             # self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/256_cropped/train_256/*.png'))
-            self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/256_cropped/train_gt_256/*.png'))
+            # self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/256_cropped/train_gt_256/*.png'))
+            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/train_input/*.png'))+sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_input/*.png'))
+            self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/train_label/*.png'))+sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_label/*.png'))
             assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
         elif self.phase=='val' : 
-            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets_delight/valid/*.png'))
-            # self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_input/*.png'))
+            # self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets_delight/valid/*.png'))
+            self.image_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_input/*.png'))
             self.gt_list = sorted(glob('/root/workspace/Challenge/LG/Datasets/valid_label/*.png'))
             assert len(self.image_list)==len(self.gt_list), 'Input and GT length are not matched'
         else:

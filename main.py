@@ -63,13 +63,15 @@ def run(args, saveDirName='.', logger=None):
     Gen = MSBDN()
     Gen = torch.nn.DataParallel(Gen).cuda()
     optim_Gen = torch.optim.Adam(Gen.parameters(), args.lr)
-    scheduler_Gen = optim.lr_scheduler.MultiStepLR(optim_Gen, milestones=[20, 30, 40], gamma=0.7)
+    scheduler_Gen = optim.lr_scheduler.MultiStepLR(optim_Gen, milestones=[300, 600, 900], gamma=0.7)
+    # scheduler_Gen = optim.lr_scheduler.MultiStepLR(optim_Gen, milestones=[20, 30, 40], gamma=0.7)
     # scheduler_Gen = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optim_Gen, T_0=20, T_mult=1, eta_min=0.00001)
 
     Dis = Discriminator()
     Dis = torch.nn.DataParallel(Dis).cuda()
     optim_Dis = torch.optim.Adam(Dis.parameters(), args.lr)
-    scheduler_Dis = optim.lr_scheduler.MultiStepLR(optim_Dis, milestones=[20, 30, 40], gamma=0.7)
+    scheduler_Dis = optim.lr_scheduler.MultiStepLR(optim_Dis, milestones=[300, 600, 900], gamma=0.7)
+    # scheduler_Dis = optim.lr_scheduler.MultiStepLR(optim_Dis, milestones=[20, 30, 40], gamma=0.7)
     # scheduler_Dis = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optim_Dis, T_0=20, T_mult=1, eta_min=0.00001)
     
     if args.resume is not None:
@@ -114,46 +116,48 @@ def run(args, saveDirName='.', logger=None):
             logger.info('Epoch: [{0}]\t Gen lr {1:.06f}\t Dis lr {1:.06f}'.format(epoch, optim_Gen.param_groups[0]['lr'], optim_Dis.param_groups[0]['lr']))
             ## train the network
             train_losses = train(train_loader, models, optims, criterions, epoch, saveDirName, args.gan_weight, eval_score=psnr, logger=logger)        
-            ## validate the network
-            val_score = validate(val_loader, Gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch, logger=logger, phase='val')
-
-            ## save the neural network
-            history_path_g = os.path.join(saveDirName, 'checkpoint_{:03d}'.format(epoch)+'.tar')
-            save_checkpoint({
-                'epoch': epoch,
-                'Gen': Gen.state_dict(),
-                'Dis': Dis.state_dict(),
-                'optim_Gen': optim_Gen.state_dict(),
-                'optim_Dis': optim_Dis.state_dict(),
-                'scheduler_Gen': scheduler_Gen.state_dict(),
-                'scheduler_Dis': scheduler_Dis.state_dict(),
-            }, True, filename=history_path_g)
-
+            
             ## step the scheduler
             scheduler_Gen.step()
             scheduler_Dis.step()
 
-            #######################################
-            # (6) Plotting
-            #######################################
-            plot_iters.extend(list(map(lambda x: epoch*len(train_loader)+x, train_losses[0])))
-            plot_total_losses.extend(train_losses[1])
-            plot_gan_losses.extend(train_losses[2])
-            plot_pix_losses.extend(train_losses[3])
-            plot_epochs.append(epoch)
-            plot_val_scores.append(val_score.item())
-            
-            plot_lrs_Gen.append(optim_Gen.param_groups[0]['lr'])
-            plot_lrs_Dis.append(optim_Dis.param_groups[0]['lr'])
+            if epoch%20 == 0:
+                ## validate the network
+                val_score = validate(val_loader, Gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch, logger=logger, phase='val')
 
-            ## Loss
-            plot_losses(plot_iters, [plot_total_losses, plot_pix_losses, plot_gan_losses], os.path.join(saveDirName, 'losses.jpg'))
+                ## save the neural network
+                history_path_g = os.path.join(saveDirName, 'checkpoint_{:03d}'.format(epoch)+'.tar')
+                save_checkpoint({
+                    'epoch': epoch,
+                    'Gen': Gen.state_dict(),
+                    'Dis': Dis.state_dict(),
+                    'optim_Gen': optim_Gen.state_dict(),
+                    'optim_Dis': optim_Dis.state_dict(),
+                    'scheduler_Gen': scheduler_Gen.state_dict(),
+                    'scheduler_Dis': scheduler_Dis.state_dict(),
+                }, True, filename=history_path_g)
 
-            ## Scores
-            plot_scores(plot_epochs, plot_val_scores, os.path.join(saveDirName, 'scores.jpg'))
-            
-            ## Learning rate
-            plot_lrs(plot_epochs, [plot_lrs_Gen, plot_lrs_Dis], os.path.join(saveDirName, 'lrs.jpg'))
+                #######################################
+                # (6) Plotting
+                #######################################
+                plot_iters.extend(list(map(lambda x: epoch*len(train_loader)+x, train_losses[0])))
+                plot_total_losses.extend(train_losses[1])
+                plot_gan_losses.extend(train_losses[2])
+                plot_pix_losses.extend(train_losses[3])
+                plot_epochs.append(epoch)
+                plot_val_scores.append(val_score.item())
+                
+                plot_lrs_Gen.append(optim_Gen.param_groups[0]['lr'])
+                plot_lrs_Dis.append(optim_Dis.param_groups[0]['lr'])
+
+                ## Loss
+                plot_losses(plot_iters, [plot_total_losses, plot_pix_losses, plot_gan_losses], os.path.join(saveDirName, 'losses.jpg'))
+
+                ## Scores
+                plot_scores(plot_epochs, plot_val_scores, os.path.join(saveDirName, 'scores.jpg'))
+                
+                ## Learning rate
+                plot_lrs(plot_epochs, [plot_lrs_Gen, plot_lrs_Dis], os.path.join(saveDirName, 'lrs.jpg'))
 
     else :  
         val_score = validate(test_loader, Gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')

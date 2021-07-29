@@ -493,7 +493,7 @@ class MSBDN(nn.Module):
         # self.convd16x = UpsampleConvLayer(256, 128, kernel_size=3, stride=2)
         self.convd16x = ConvLayer(256, 512, kernel_size=1, stride=1)
         self.attention4 = CP_Attention_block(default_conv, 128, 3)
-        self.shortcut4 = ConvLayer(128, 128, kernel_size=3, stride=1, padding_mode = 'same')
+        self.shortcut4 = ConvLayer(128, 128, kernel_size=3, stride=1, padding_mode = 'zeros')
         self.dense_4 = nn.Sequential(
             ResidualBlock(128),
             ResidualBlock(128),
@@ -504,7 +504,7 @@ class MSBDN(nn.Module):
         # self.convd8x = UpsampleConvLayer(128, 64, kernel_size=3, stride=2)
         self.convd8x = ConvLayer(128, 256, kernel_size=1, stride=1)
         self.attention3 = CP_Attention_block(default_conv, 64, 3)
-        self.shortcut3 = ConvLayer(64, 64, kernel_size=3, stride=1, padding_mode = 'same')
+        self.shortcut3 = ConvLayer(64, 64, kernel_size=3, stride=1, padding_mode = 'zeros')
         self.dense_3 = nn.Sequential(
             ResidualBlock(64),
             ResidualBlock(64),
@@ -515,7 +515,7 @@ class MSBDN(nn.Module):
         # self.convd4x = UpsampleConvLayer(64, 32, kernel_size=3, stride=2)
         self.convd4x = ConvLayer(64, 128, kernel_size=1, stride=1)
         self.attention2 = CP_Attention_block(default_conv, 32, 3)
-        self.shortcut2 = ConvLayer(32, 32, kernel_size=3, stride=1, padding_mode = 'same')
+        self.shortcut2 = ConvLayer(32, 32, kernel_size=3, stride=1, padding_mode = 'zeros')
         self.dense_2 = nn.Sequential(
             ResidualBlock(32),
             ResidualBlock(32),
@@ -526,7 +526,7 @@ class MSBDN(nn.Module):
         # self.convd2x = UpsampleConvLayer(32, 16, kernel_size=3, stride=2)
         self.convd2x = ConvLayer(32, 64, kernel_size=1, stride=1)
         self.attention1 = CP_Attention_block(default_conv, 16, 3)
-        self.shortcut1 = ConvLayer(16, 16, kernel_size=3, stride=1, padding_mode = 'same')
+        self.shortcut1 = ConvLayer(16, 16, kernel_size=3, stride=1, padding_mode = 'zeros')
         self.dense_1 = nn.Sequential(
             ResidualBlock(16),
             ResidualBlock(16),
