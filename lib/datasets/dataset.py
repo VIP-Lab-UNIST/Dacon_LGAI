@@ -26,23 +26,14 @@ class RestList(torch.utils.data.Dataset):
         random.seed()
         image = cv2.imread(join(self.data_dir, self.image_list[index]))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        data = []
-        if (self.phase == 'train'):
+
+        data = [image]
+
+        if self.gt_list is not None:
             gt = cv2.imread(join(self.data_dir, self.gt_list[index]))
             gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
-            data.extend([image, gt])
-        elif (self.phase == 'val'):
-            image_up = image[0:2432,:,:]
-            image_down = image[16:2448,:,:]
-
-            gt = cv2.imread(join(self.data_dir, self.gt_list[index]))
-            gt = cv2.cvtColor(gt, cv2.COLOR_BGR2RGB)
-            data.extend([image_up, image_down, gt])
-        else:
-            image_up = image[0:2432,:,:]
-            image_down = image[16:2448,:,:]
-            data.extend([image_up, image_down, image])
-
+            data.append(gt)
+    
         data = tuple(data)
         data = (self.transform(*data))
 
