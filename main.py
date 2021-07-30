@@ -42,18 +42,18 @@ def run(args, saveDirName='.', logger=None):
     train_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'train', transforms.Compose(t_super)),
         batch_size=batch_size, shuffle=True, num_workers=8,
-        pin_memory=True, drop_last=False)
+        pin_memory=False, drop_last=False)
 
     t = [transforms.ToTensor()]
     val_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'val', transforms.Compose(t), out_name=True),
         batch_size=1, shuffle=False, num_workers=8,
-        pin_memory=True, drop_last=False)
+        pin_memory=False, drop_last=False)
 
     test_loader = torch.utils.data.DataLoader(
         RestList(data_dir, 'test', transforms.Compose(t), out_name=True),
         batch_size=1, shuffle=False, num_workers=8,
-        pin_memory=True, drop_last=False)
+        pin_memory=False, drop_last=False)
 
     #######################################
     # (3) Initialize neural netowrk and optimizer
