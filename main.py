@@ -107,12 +107,12 @@ def run(args, saveDirName='.', logger=None):
         for epoch in range(start_epoch, args.epochs):
             # logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, lr))
             ## train the network
-            train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], args.gan_weight, eval_score=psnr, logger=logger)        
+            train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], epoch, saveDirName, args.gan_weight, eval_score=psnr, logger=logger)        
             
             gen_scheduler.step()
             dis_scheduler.step()
 
-            if epoch%80 == 0:
+            if epoch%args.save_interval == 0:
                 ## validate the network
                 val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch, logger=logger, phase='val')
 
@@ -154,6 +154,7 @@ def parse_args():
     parser.add_argument('--save-dir', default=None, required=True) #
     parser.add_argument('--crop-size', nargs='+', type=int) #
     parser.add_argument('--step', type=int, default=200) #
+    parser.add_argument('--save-interval', type=int, default=2) #
     parser.add_argument('--ssim_weight', type=float, default=0) #
     parser.add_argument('--perc_weight', type=float, default=0) #
     parser.add_argument('--gan_weight', type=float, default=0) #

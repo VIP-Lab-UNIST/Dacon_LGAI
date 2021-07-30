@@ -3,7 +3,7 @@ import time
 from tqdm import tqdm
 from lib.utils.util import AverageMeter
 
-def train(train_loader, models, optims, criterions, gan_weight, eval_score=None, print_freq=10, logger=None):
+def train(train_loader, models, optims, criterions, epoch, output_path, gan_weight, eval_score=None, print_freq=10, logger=None):
     
     #######################################
     # (1) Initialize    
@@ -34,7 +34,7 @@ def train(train_loader, models, optims, criterions, gan_weight, eval_score=None,
     base_losses = []
     gan_losses = []
     total_losses = []
-    for i, (inputs, gts) in enumerate(tqdm(train_loader, desc="Training iteration")):
+    for i, (inputs, gts) in enumerate(tqdm(train_loader, desc="Epoch: {:d} Output: {}".format(epoch, output_path))):
         data_time.update(time.time() - end)
 
         ## loading image pairs
