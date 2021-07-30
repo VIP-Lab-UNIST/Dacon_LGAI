@@ -8,7 +8,7 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py train \
                                 --ssim_weight 0.2 \
                                 --perc_weight 0.001 \
                                 --gan_weight 0.005 \
-                                --save-dir ./logs/train/DWGAN/size704_1024/
+                                --save-dir ./logs/train/khko_DWGAN_multiscale_multidis_/size704_1024/
                                 # --save-dir ./logs/train/tmp
 
                                 # --resume ./logs/train/DWGAN/202107161604/checkpoint_070.tar \

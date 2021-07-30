@@ -19,7 +19,7 @@ from lib.utils.util import save_output_images, save_checkpoint, psnr, plot_losse
 
 def run(args, saveDirName='.', logger=None):
     #######################################
-    # (1) Load and display hyper-parameters
+    # (1) Load and Display hyper-parameters
     #######################################
 
     batch_size = args.batch_size
@@ -59,27 +59,56 @@ def run(args, saveDirName='.', logger=None):
     # (3) Initialize neural netowrk and optimizer
     #######################################
 
-    gen = fusion_net()
-    gen = torch.nn.DataParallel(gen).cuda()
-    gen_optim = torch.optim.Adam(gen.parameters(), args.lr)
-    gen_scheduler = optim.lr_scheduler.MultiStepLR(gen_optim, milestones=[2000, 3000, 4000], gamma=0.7)
+    Gen = fusion_net()
+    Gen = torch.nn.DataParallel(Gen).cuda()
+    optim_Gen = torch.optim.Adam(Gen.parameters(), args.lr)
+    scheduler_Gen = optim.lr_scheduler.MultiStepLR(optim_Gen, milestones=[2000, 3000, 4000], gamma=0.7)
 
-    dis = Discriminator()
-    dis = torch.nn.DataParallel(dis).cuda()
-    dis_optim = torch.optim.Adam(dis.parameters(), args.lr)
-    dis_scheduler = optim.lr_scheduler.MultiStepLR(dis_optim, milestones=[2000, 3000, 4000], gamma=0.7)
+    Dis = Discriminator()
+    Dis1 = Discriminator()
+    Dis2 = Discriminator()
+    Dis3 = Discriminator()
+    Dis4 = Discriminator()
+    Dis = torch.nn.DataParallel(Dis).cuda()
+    Dis1 = torch.nn.DataParallel(Dis1).cuda()
+    Dis2 = torch.nn.DataParallel(Dis2).cuda()
+    Dis3 = torch.nn.DataParallel(Dis3).cuda()
+    Dis4 = torch.nn.DataParallel(Dis4).cuda()
+    optim_Dis = torch.optim.Adam(Dis.parameters(), args.lr)
+    optim1_Dis = torch.optim.Adam(Dis1.parameters(), args.lr)
+    optim2_Dis = torch.optim.Adam(Dis2.parameters(), args.lr)
+    optim3_Dis = torch.optim.Adam(Dis3.parameters(), args.lr)
+    optim4_Dis = torch.optim.Adam(Dis4.parameters(), args.lr)
+
+    scheduler_Dis = optim.lr_scheduler.MultiStepLR(optim_Dis, milestones=[2000, 3000, 4000], gamma=0.7)
+    scheduler1_Dis = optim.lr_scheduler.MultiStepLR(optim1_Dis, milestones=[2000, 3000, 4000], gamma=0.7)
+    scheduler2_Dis = optim.lr_scheduler.MultiStepLR(optim2_Dis, milestones=[2000, 3000, 4000], gamma=0.7)
+    scheduler3_Dis = optim.lr_scheduler.MultiStepLR(optim3_Dis, milestones=[2000, 3000, 4000], gamma=0.7)
+    scheduler4_Dis = optim.lr_scheduler.MultiStepLR(optim4_Dis, milestones=[2000, 3000, 4000], gamma=0.7)
     
     if args.resume is not None:
         state = torch.load(args.resume)
         start_epoch = state['epoch']
-        gen.load_state_dict(state['gen'])
-        gen_optim.load_state_dict(state['gen_optim'])
-        gen_scheduler.load_state_dict(state['gen_scheduler'])
+        Gen.load_state_dict(state['Gen'])
+        optim_Gen.load_state_dict(state['optim_Gen'])
+        scheduler_Gen.load_state_dict(state['scheduler_Gen'])
 
-        dis.load_state_dict(state['dis'])
-        dis_optim.load_state_dict(state['dis_optim'])
-        dis_scheduler.load_state_dict(state['dis_scheduler'])
-        print('Complete the resume')
+        Dis.load_state_dict(state['Dis'])
+        Dis1.load_state_dict(state['Dis1'])
+        Dis2.load_state_dict(state['Dis2'])
+        Dis3.load_state_dict(state['Dis3'])
+        Dis4.load_state_dict(state['Dis4'])
+        optim_Dis.load_state_dict(state['optim_Dis'])
+        optim1_Dis.load_state_dict(state['optim1_Dis'])
+        optim2_Dis.load_state_dict(state['optim2_Dis'])
+        optim3_Dis.load_state_dict(state['optim3_Dis'])
+        optim4_Dis.load_state_dict(state['optim4_Dis'])
+        scheduler_Dis.load_state_dict(state['scheduler_Dis'])
+        scheduler1_Dis.load_state_dict(state['scheduler1_Dis'])
+        scheduler2_Dis.load_state_dict(state['scheduler2_Dis'])
+        scheduler3_Dis.load_state_dict(state['scheduler3_Dis'])
+        scheduler4_Dis.load_state_dict(state['scheduler4_Dis'])
+        logger.info('Complete the resume')
     else:
         start_epoch = 0
 
@@ -88,7 +117,7 @@ def run(args, saveDirName='.', logger=None):
     #######################################
 
     criterion = LossFunction(weight_ssim=args.ssim_weight, weight_perc=args.perc_weight).cuda()
-    dis_criterion = GANLoss().cuda()
+    gan_criterion = GANLoss().cuda()
 
     #######################################
     # (5) Train or test
@@ -103,29 +132,44 @@ def run(args, saveDirName='.', logger=None):
     plot_base_losses= []
     plot_gan_losses= []
     plot_total_losses= []
+    models = Gen, Dis, Dis1, Dis2, Dis3, Dis4
+    optims = optim_Gen, optim_Dis, optim1_Dis, optim2_Dis, optim3_Dis, optim4_Dis
+    criterions = criterion, gan_criterion
     if args.cmd == 'train' : # train mode
         for epoch in range(start_epoch, args.epochs):
             # logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, lr))
             ## train the network
-            train_losses = train(train_loader, [gen, dis], [gen_optim, dis_optim], [criterion,dis_criterion], epoch, saveDirName, args.gan_weight, eval_score=psnr, logger=logger)        
+            train_losses = train(train_loader, models, optims, criterions, epoch, saveDirName, args.gan_weight, eval_score=psnr, logger=logger)        
             
-            gen_scheduler.step()
-            dis_scheduler.step()
+            scheduler_Gen.step()
+            scheduler_Dis.step()
 
             if epoch%args.save_interval == 0:
                 ## validate the network
-                val_score = validate(val_loader, gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch, logger=logger, phase='val')
+                val_score = validate(val_loader, Gen, batch_size=batch_size, output_dir = saveDirName, save_vis=True, epoch=epoch, logger=logger, phase='val')
 
                 ## save the neural network
                 history_path_g = os.path.join(saveDirName, 'checkpoint_{:03d}'.format(epoch)+'.tar')
                 save_checkpoint({
-                    'epoch': epoch,
-                    'gen': gen.state_dict(),
-                    'dis': dis.state_dict(),
-                    'gen_optim': gen_optim.state_dict(),
-                    'dis_optim': dis_optim.state_dict(),
-                    'gen_scheduler': gen_scheduler.state_dict(),
-                    'dis_scheduler': dis_scheduler.state_dict(),
+                'epoch': epoch + 1,
+                'Gen': Gen.state_dict(),
+                'Dis': Dis.state_dict(),
+                'Dis1': Dis1.state_dict(),
+                'Dis2': Dis2.state_dict(),
+                'Dis3': Dis3.state_dict(),
+                'Dis4': Dis4.state_dict(),
+                'optim_Gen': optim_Gen.state_dict(),
+                'optim_Dis': optim_Dis.state_dict(),
+                'optim1_Dis': optim1_Dis.state_dict(),
+                'optim2_Dis': optim2_Dis.state_dict(),
+                'optim3_Dis': optim3_Dis.state_dict(),
+                'optim4_Dis': optim4_Dis.state_dict(),
+                'scheduler_Gen': scheduler_Gen.state_dict(),
+                'scheduler_Dis': scheduler_Dis.state_dict(),
+                'scheduler1_Dis': scheduler1_Dis.state_dict(),
+                'scheduler2_Dis': scheduler2_Dis.state_dict(),
+                'scheduler3_Dis': scheduler3_Dis.state_dict(),
+                'scheduler4_Dis': scheduler4_Dis.state_dict(),
                 }, True, filename=history_path_g)
 
                 #######################################
@@ -144,7 +188,7 @@ def run(args, saveDirName='.', logger=None):
                 plot_scores(plot_epochs, plot_val_scores, os.path.join(saveDirName, 'scores.jpg'))
 
     else :  # test mode (if epoch = 0, the image format is png)
-        val_score = validate(test_loader, gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
+        val_score = validate(test_loader, Gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
 
 def parse_args():
     # Training settings

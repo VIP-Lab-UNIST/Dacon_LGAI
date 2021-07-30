@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 import torch
 import models.Res2Net as Pre_Res2Net
@@ -202,29 +203,38 @@ class knowledge_adaptation_UNet(nn.Module):
         self.up_block= nn.PixelShuffle(2)
         self.attention0 = CP_Attention_block(default_conv, 1024, 3)
         self.attention1 = CP_Attention_block(default_conv, 256, 3)
+        self.out1 = nn.Conv2d(256, 3, kernel_size=1, padding=0)
         self.attention2 = CP_Attention_block(default_conv, 192, 3)
+        self.out2 = nn.Conv2d(192, 3, kernel_size=1, padding=0)
         self.attention3 = CP_Attention_block(default_conv, 112, 3)
+        self.out3 = nn.Conv2d(112, 3, kernel_size=1, padding=0)
         self.attention4 = CP_Attention_block(default_conv, 44, 3)
+        self.out4 = nn.Conv2d(44, 3, kernel_size=1, padding=0)
         self.conv_process_1 = nn.Conv2d(44, 44, kernel_size=3,padding=1)
         self.conv_process_2 = nn.Conv2d(44, 28, kernel_size=3,padding=1)
         self.tail = nn.Sequential(nn.ReflectionPad2d(3), nn.Conv2d(28, 3, kernel_size=7, padding=0), nn.Tanh())
+    
     def forward(self, input):
         x_inital, x_layer1, x_layer2, x_output = self.encoder(input)
         x_mid = self.attention0(x_output)
         x = self.up_block(x_mid)
         x = self.attention1(x)
+        RGBout1 = self.out1(x)
         x = torch.cat((x, x_layer2), 1)
         x = self.up_block(x)
         x = self.attention2(x)
+        RGBout2 = self.out2(x)
         x = torch.cat((x, x_layer1), 1)
         x = self.up_block(x)
         x = self.attention3(x)
+        RGBout3 = self.out3(x)
         x = torch.cat((x, x_inital), 1)
         x = self.up_block(x)
         x = self.attention4(x)
+        RGBout4 = self.out4(x)
         x=self.conv_process_1(x)
         out=self.conv_process_2(x)
-        return out
+        return [out, RGBout4, RGBout3, RGBout2, RGBout1]
 
 class DWT_transform(nn.Module):
     def __init__(self, in_channels,out_channels):
@@ -313,9 +323,13 @@ class dwt_UNet(nn.Module):
         self.dlayer6 = dlayer6
         self.dlayer5 = dlayer5
         self.dlayer4 = dlayer4
+        self.out4 = nn.Conv2d(64, 3, kernel_size=1, padding=0)
         self.dlayer3 = dlayer3
+        self.out3 = nn.Conv2d(32, 3, kernel_size=1, padding=0)
         self.dlayer2 = dlayer2
+        self.out2 = nn.Conv2d(16, 3, kernel_size=1, padding=0)
         self.dlayer1 = dlayer1
+        self.out1 = nn.Conv2d(32, 3, kernel_size=1, padding=0)
         self.tail_conv1 = nn.Conv2d(48, 32, 3, padding=1, bias=True)
         self.bn2=nn.BatchNorm2d(32)
         self.tail_conv2 = nn.Conv2d(nf*2, output_nc, 3,padding=1, bias=True)
@@ -348,19 +362,28 @@ class dwt_UNet(nn.Module):
 
         Tout6_out5 = torch.cat([dout6, out5, dwt_high_4], 1)
         Tout5 = self.dlayer5(Tout6_out5)
+
         Tout5_out4 = torch.cat([Tout5, out4,dwt_high_3], 1)
         Tout4 = self.dlayer4(Tout5_out4)
+        RGBout4 = self.out4(Tout4)
+
         Tout4_out3 = torch.cat([Tout4, out3,dwt_high_2], 1)
         Tout3 = self.dlayer3(Tout4_out3)
+        RGBout3 = self.out3(Tout3)
+
         Tout3_out2 = torch.cat([Tout3, out2,dwt_high_1], 1)
         Tout2 = self.dlayer2(Tout3_out2)
+        RGBout2 = self.out2(Tout2)
+
         Tout2_out1 = torch.cat([Tout2, out1,dwt_high_0], 1)
         Tout1 = self.dlayer1(Tout2_out1)
+        RGBout1 = self.out1(Tout1)
+
         Tout1_outinit = torch.cat([Tout1, conv_start], 1)
         tail1=self.tail_conv1(Tout1_outinit)
         tail2=self.bn2(tail1)
         dout1 = self.tail_conv2(tail2)
-        return dout1
+        return [dout1, RGBout1, RGBout2, RGBout3, RGBout4]
 
 class fusion_net(nn.Module):
     def __init__(self):
@@ -371,13 +394,39 @@ class fusion_net(nn.Module):
     def forward(self, input):
         dwt_branch=self.dwt_branch(input)
         knowledge_adaptation_branch=self.knowledge_adaptation_branch(input)
-        x = torch.cat([dwt_branch, knowledge_adaptation_branch], 1)
+        x = torch.cat([dwt_branch[0], knowledge_adaptation_branch[0]], 1)
         x = self.fusion(x)
-        return x
+        return x, [dwt_branch[1], knowledge_adaptation_branch[1]], \
+        [dwt_branch[2], knowledge_adaptation_branch[2]], \
+        [dwt_branch[3], knowledge_adaptation_branch[3]], \
+        [dwt_branch[4], knowledge_adaptation_branch[4]]
 
+            
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride = 2, padding=1)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride = 2, padding=1)
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride = 2, padding=1)
+        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride = 2, padding=1)
+
+        self.bn2 = nn.BatchNorm2d(128)
+        self.bn3 = nn.BatchNorm2d(256)
+        self.bn4 = nn.BatchNorm2d(512)
+
+        self.conv1x1 = nn.Conv2d(512, 1, kernel_size=1, stride = 1, padding=0)
+
+    def forward(self, x):
+        feat1 = F.leaky_relu(self.conv1(x), negative_slope=0.2, inplace=True)
+        feat2 = F.leaky_relu(self.bn2(self.conv2(feat1)), negative_slope=0.2, inplace=True)
+        feat3 = F.leaky_relu(self.bn3(self.conv3(feat2)), negative_slope=0.2, inplace=True)
+        feat4 = F.leaky_relu(self.bn4(self.conv4(feat3)), negative_slope=0.2, inplace=True)
+        prob = self.conv1x1(feat4)
+        return prob
+
+class Deep_Discriminator(nn.Module):
+    def __init__(self):
+        super(Deep_Discriminator, self).__init__()
         self.net = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
             nn.LeakyReLU(0.2),
@@ -419,145 +468,3 @@ class Discriminator(nn.Module):
     def forward(self, x):
         batch_size = x.size(0)
         return torch.sigmoid(self.net(x).view(batch_size))
-
-
-
-class DeformConv2d(nn.Module):
-    def __init__(self, inc, outc, kernel_size=3, padding=1, stride=1, bias=None, modulation=False):
-        """
-        Args:
-            modulation (bool, optional): If True, Modulated Defomable Convolution (Deformable ConvNets v2).
-        """
-        super(DeformConv2d, self).__init__()
-        self.kernel_size = kernel_size
-        self.padding = padding
-        self.stride = stride
-        self.zero_padding = nn.ZeroPad2d(padding)
-        self.conv = nn.Conv2d(inc, outc, kernel_size=kernel_size, stride=kernel_size, bias=bias)
-
-        self.p_conv = nn.Conv2d(inc, 2*kernel_size*kernel_size, kernel_size=3, padding=1, stride=stride)
-        nn.init.constant_(self.p_conv.weight, 0)
-        self.p_conv.register_backward_hook(self._set_lr)
-
-        self.modulation = modulation
-        if modulation:
-            self.m_conv = nn.Conv2d(inc, kernel_size*kernel_size, kernel_size=3, padding=1, stride=stride)
-            nn.init.constant_(self.m_conv.weight, 0)
-            self.m_conv.register_backward_hook(self._set_lr)
-
-    @staticmethod
-    def _set_lr(module, grad_input, grad_output):
-        grad_input = (grad_input[i] * 0.1 for i in range(len(grad_input)))
-        grad_output = (grad_output[i] * 0.1 for i in range(len(grad_output)))
-
-    def forward(self, x):
-        offset = self.p_conv(x)
-        if self.modulation:
-            m = torch.sigmoid(self.m_conv(x))
-
-        dtype = offset.data.type()
-        ks = self.kernel_size
-        N = offset.size(1) // 2
-
-        if self.padding:
-            x = self.zero_padding(x)
-
-        # (b, 2N, h, w)
-        p = self._get_p(offset, dtype)
-
-        # (b, h, w, 2N)
-        p = p.contiguous().permute(0, 2, 3, 1)
-        q_lt = p.detach().floor()
-        q_rb = q_lt + 1
-
-        q_lt = torch.cat([torch.clamp(q_lt[..., :N], 0, x.size(2)-1), torch.clamp(q_lt[..., N:], 0, x.size(3)-1)], dim=-1).long()
-        q_rb = torch.cat([torch.clamp(q_rb[..., :N], 0, x.size(2)-1), torch.clamp(q_rb[..., N:], 0, x.size(3)-1)], dim=-1).long()
-        q_lb = torch.cat([q_lt[..., :N], q_rb[..., N:]], dim=-1)
-        q_rt = torch.cat([q_rb[..., :N], q_lt[..., N:]], dim=-1)
-
-        # clip p
-        p = torch.cat([torch.clamp(p[..., :N], 0, x.size(2)-1), torch.clamp(p[..., N:], 0, x.size(3)-1)], dim=-1)
-
-        # bilinear kernel (b, h, w, N)
-        g_lt = (1 + (q_lt[..., :N].type_as(p) - p[..., :N])) * (1 + (q_lt[..., N:].type_as(p) - p[..., N:]))
-        g_rb = (1 - (q_rb[..., :N].type_as(p) - p[..., :N])) * (1 - (q_rb[..., N:].type_as(p) - p[..., N:]))
-        g_lb = (1 + (q_lb[..., :N].type_as(p) - p[..., :N])) * (1 - (q_lb[..., N:].type_as(p) - p[..., N:]))
-        g_rt = (1 - (q_rt[..., :N].type_as(p) - p[..., :N])) * (1 + (q_rt[..., N:].type_as(p) - p[..., N:]))
-
-        # (b, c, h, w, N)
-        x_q_lt = self._get_x_q(x, q_lt, N)
-        x_q_rb = self._get_x_q(x, q_rb, N)
-        x_q_lb = self._get_x_q(x, q_lb, N)
-        x_q_rt = self._get_x_q(x, q_rt, N)
-
-        # (b, c, h, w, N)
-        x_offset = g_lt.unsqueeze(dim=1) * x_q_lt + \
-                   g_rb.unsqueeze(dim=1) * x_q_rb + \
-                   g_lb.unsqueeze(dim=1) * x_q_lb + \
-                   g_rt.unsqueeze(dim=1) * x_q_rt
-
-        # modulation
-        if self.modulation:
-            m = m.contiguous().permute(0, 2, 3, 1)
-            m = m.unsqueeze(dim=1)
-            m = torch.cat([m for _ in range(x_offset.size(1))], dim=1)
-            x_offset *= m
-
-        x_offset = self._reshape_x_offset(x_offset, ks)
-        out = self.conv(x_offset)
-
-        return out
-
-    def _get_p_n(self, N, dtype):
-        p_n_x, p_n_y = torch.meshgrid(
-            torch.arange(-(self.kernel_size-1)//2, (self.kernel_size-1)//2+1),
-            torch.arange(-(self.kernel_size-1)//2, (self.kernel_size-1)//2+1))
-        # (2N, 1)
-        p_n = torch.cat([torch.flatten(p_n_x), torch.flatten(p_n_y)], 0)
-        p_n = p_n.view(1, 2*N, 1, 1).type(dtype)
-
-        return p_n
-
-    def _get_p_0(self, h, w, N, dtype):
-        p_0_x, p_0_y = torch.meshgrid(
-            torch.arange(1, h*self.stride+1, self.stride),
-            torch.arange(1, w*self.stride+1, self.stride))
-        p_0_x = torch.flatten(p_0_x).view(1, 1, h, w).repeat(1, N, 1, 1)
-        p_0_y = torch.flatten(p_0_y).view(1, 1, h, w).repeat(1, N, 1, 1)
-        p_0 = torch.cat([p_0_x, p_0_y], 1).type(dtype)
-
-        return p_0
-
-    def _get_p(self, offset, dtype):
-        N, h, w = offset.size(1)//2, offset.size(2), offset.size(3)
-
-        # (1, 2N, 1, 1)
-        p_n = self._get_p_n(N, dtype)
-        # (1, 2N, h, w)
-        p_0 = self._get_p_0(h, w, N, dtype)
-        p = p_0 + p_n + offset
-        return p
-
-    def _get_x_q(self, x, q, N):
-        b, h, w, _ = q.size()
-        padded_w = x.size(3)
-        c = x.size(1)
-        # (b, c, h*w)
-        x = x.contiguous().view(b, c, -1)
-
-        # (b, h, w, N)
-        index = q[..., :N]*padded_w + q[..., N:]  # offset_x*w + offset_y
-        # (b, c, h*w*N)
-        index = index.contiguous().unsqueeze(dim=1).expand(-1, c, -1, -1, -1).contiguous().view(b, c, -1)
-
-        x_offset = x.gather(dim=-1, index=index).contiguous().view(b, c, h, w, N)
-
-        return x_offset
-
-    @staticmethod
-    def _reshape_x_offset(x_offset, ks):
-        b, c, h, w, N = x_offset.size()
-        x_offset = torch.cat([x_offset[..., s:s+ks].contiguous().view(b, c, h, w*ks) for s in range(0, N, ks)], dim=-1)
-        x_offset = x_offset.contiguous().view(b, c, h*ks, w*ks)
-
-        return x_offset
