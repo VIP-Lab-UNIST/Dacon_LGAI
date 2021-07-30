@@ -36,7 +36,7 @@ def run(args, saveDirName='.', logger=None):
     data_dir = args.data_dir
     t_super= [transforms.RandomCrop(tuple(args.crop_size)),
                 transforms.RandomFlip(),
-                transforms.RandomRotate(),
+                transforms.Random180Rotate(),
                 transforms.ToTensor()]
     
     train_loader = torch.utils.data.DataLoader(
@@ -114,7 +114,7 @@ def run(args, saveDirName='.', logger=None):
     criterions = criterionPix
     if args.cmd == 'train' : # train mode
         for epoch in range(start_epoch, args.epochs):
-            logger.info('Epoch: [{0}]\t Gen lr {1:.06f}'.format(epoch, optim_Gen.param_groups[0]['lr']))
+            # logger.info('Epoch: [{0}]\t Gen lr {1:.06f}'.format(epoch, optim_Gen.param_groups[0]['lr']))
             # logger.info('Epoch: [{0}]\t Gen lr {1:.06f}\t Dis lr {1:.06f}'.format(epoch, optim_Gen.param_groups[0]['lr'], optim_Dis.param_groups[0]['lr']))
             ## train the network
             train_losses = train(train_loader, models, optims, criterions, epoch, saveDirName, args.gan_weight, eval_score=psnr, logger=logger)        

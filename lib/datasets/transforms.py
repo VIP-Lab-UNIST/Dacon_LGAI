@@ -127,7 +127,20 @@ class RandomRotate(object):
         else:
             input = tuple(map(lambda x: cv2.rotate(x, cv2.ROTATE_180), input))
         return input
-
+        
+class Random180Rotate(object):
+    """
+    Randomly rotates images in (180*n) degree.
+    (n = 0, 1)
+    """
+    def __call__(self, *input):
+        assert input[0].shape == input[1].shape
+        p = random.random()
+        if p < 0.5:
+            pass
+        else:
+            input = tuple(map(lambda x: cv2.rotate(x, cv2.ROTATE_180), input))
+        return input
 
 class RandomFlip(object):
     """
