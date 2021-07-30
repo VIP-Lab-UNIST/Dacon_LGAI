@@ -8,7 +8,7 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py train \
                                 --perc_weight 0.001 \
                                 --gan_weight 0.\
                                 --save-dir ./logs/tmp/
-                                # --save-dir ./logs/train/khko_MSBDN/size896_1280
+                                # --save-dir ./logs/train/khko_MSBDN_deep2_attnscut/size704_1024
                                 # --resume ../Others/MSBDN-DFF/models/model.pkl \
 
                                 # --crop-size 896 1280 \
