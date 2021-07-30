@@ -26,9 +26,9 @@ def validate(val_loader, model, batch_size, output_dir='val', save_vis=False, ep
     for i, (img, gt, name) in enumerate(tqdm(val_loader, desc="Validation iteration")):
         
         # loading image pairs
-        
         _, _, h, w = img.size()
-        img = F.interpolate(img, size=(h + 16 - h % 16 , w + 16 - w % 16), mode='bilinear')
+        offset = 64
+        img = F.interpolate(img, size=(h + offset - h % offset , w + offset - w % offset), mode='bilinear')
         img = img.float().cuda()
         gt = gt.float()
         with torch.no_grad():
