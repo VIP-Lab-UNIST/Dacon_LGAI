@@ -490,32 +490,13 @@ class MSBDN(nn.Module):
 
         self.conv32x = ConvLayer(256, 512, kernel_size=3, stride=2)
         self.fusion5 = Encoder_MDCBlock1(512, 6, mode='iter4')
-        self.dense5 = nn.Sequential(
-            ResidualBlock(512),
-            ResidualBlock(512),
-            ResidualBlock(512)
-        )
-
-        self.conv64x = ConvLayer(512, 1024, kernel_size=3, stride=2)
-        self.fusion6 = Encoder_MDCBlock1(1024, 7, mode='iter4')
-        self.dense6 = RDB(1024)
-        self.dense7 = RDB(1024)
-        self.dense8 = RDB(1024)
+        self.dense5 = RDB(512)
+        self.dense6 = RDB(512)
+        self.dense7 = RDB(512)
 
         self.dehaze = nn.Sequential()
         for i in range(0, res_blocks):
-            self.dehaze.add_module('res%d' % i, ResidualBlock(1024))
-
-        # self.convd64x = UpsampleConvLayer(1024, 512, kernel_size=3, stride=2)
-        self.convd64x = ConvLayer(1024, 2048, kernel_size=1, stride=1)
-        self.attention6 = CP_Attention_block(default_conv, 512, 3)
-        self.shortcut6 = ConvLayer(512, 512, kernel_size=3, stride=1, padding_mode = 'zeros')
-        self.dense_6 = nn.Sequential(
-            ResidualBlock(512),
-            ResidualBlock(512),
-            ResidualBlock(512)
-        )
-        self.fusion_6 = Decoder_MDCBlock1(512, 2, mode='iter4')
+            self.dehaze.add_module('res%d' % i, ResidualBlock(512))
 
         # self.convd32x = UpsampleConvLayer(512, 256, kernel_size=3, stride=2)
         self.convd32x = ConvLayer(512, 1024, kernel_size=1, stride=1)
@@ -526,7 +507,7 @@ class MSBDN(nn.Module):
             ResidualBlock(256),
             ResidualBlock(256)
         )
-        self.fusion_5 = Decoder_MDCBlock1(256, 3, mode='iter4')
+        self.fusion_5 = Decoder_MDCBlock1(256, 2, mode='iter4')
 
         # self.convd16x = UpsampleConvLayer(256, 128, kernel_size=3, stride=2)
         self.convd16x = ConvLayer(256, 512, kernel_size=1, stride=1)
@@ -537,7 +518,7 @@ class MSBDN(nn.Module):
             ResidualBlock(128),
             ResidualBlock(128)
         )
-        self.fusion_4 = Decoder_MDCBlock1(128, 4, mode='iter4')
+        self.fusion_4 = Decoder_MDCBlock1(128, 3, mode='iter4')
 
         # self.convd8x = UpsampleConvLayer(128, 64, kernel_size=3, stride=2)
         self.convd8x = ConvLayer(128, 256, kernel_size=1, stride=1)
@@ -548,7 +529,7 @@ class MSBDN(nn.Module):
             ResidualBlock(64),
             ResidualBlock(64)
         )
-        self.fusion_3 = Decoder_MDCBlock1(64, 5, mode='iter4')
+        self.fusion_3 = Decoder_MDCBlock1(64, 4, mode='iter4')
 
         # self.convd4x = UpsampleConvLayer(64, 32, kernel_size=3, stride=2)
         self.convd4x = ConvLayer(64, 128, kernel_size=1, stride=1)
@@ -559,7 +540,7 @@ class MSBDN(nn.Module):
             ResidualBlock(32),
             ResidualBlock(32)
         )
-        self.fusion_2 = Decoder_MDCBlock1(32, 6, mode='iter4')
+        self.fusion_2 = Decoder_MDCBlock1(32, 5, mode='iter4')
 
         # self.convd2x = UpsampleConvLayer(32, 16, kernel_size=3, stride=2)
         self.convd2x = ConvLayer(32, 64, kernel_size=1, stride=1)
@@ -570,7 +551,7 @@ class MSBDN(nn.Module):
             ResidualBlock(16),
             ResidualBlock(16)
         )
-        self.fusion_1 = Decoder_MDCBlock1(16, 7, mode='iter4')
+        self.fusion_1 = Decoder_MDCBlock1(16, 6, mode='iter4')
 
         self.conv_output = ConvLayer(16, 3, kernel_size=3, stride=1)
 
@@ -602,30 +583,14 @@ class MSBDN(nn.Module):
 
         res32x = self.conv32x(res16x)
         res32x = self.fusion5(res32x, feature_mem)
-        feature_mem.append(res32x)
-        res32x = self.dense5(res32x) + res32x
+        res32x = self.dense5(res32x)
+        res32x = self.dense6(res32x)
+        res32x = self.dense7(res32x)
 
-        res64x = self.conv64x(res32x)
-        res64x = self.fusion6(res64x, feature_mem)
-
-        res64x = self.dense6(res64x)
-        res64x = self.dense7(res64x)
-        res64x = self.dense8(res64x)
-
-        res_dehaze = res64x
-        in_ft = res64x*2
-        res64x = self.dehaze(in_ft) + in_ft - res_dehaze
-        feature_mem_up = [res64x]
-
-        res64x = self.convd64x(res64x)
-        res64x = self.up_block(res64x)
-        res64x = self.attention6(res64x)
-        # res64x = self.convd64x(res64x)
-        # res64x = F.upsample(res64x, res32x.size()[2:], mode='bilinear')
-        res32x = torch.add(res64x, self.shortcut6(res32x))
-        res32x = self.dense_6(res32x) + res32x - res64x 
-        res32x = self.fusion_6(res32x, feature_mem_up)
-        feature_mem_up.append(res32x)
+        res_dehaze = res32x
+        in_ft = res32x*2
+        res32x = self.dehaze(in_ft) + in_ft - res_dehaze
+        feature_mem_up = [res32x]
 
         res32x = self.convd32x(res32x)
         res32x = self.up_block(res32x)
