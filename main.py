@@ -36,7 +36,7 @@ def run(args, saveDirName='.', logger=None):
     data_dir = args.data_dir
     t_super= [transforms.RandomCrop(tuple(args.crop_size)),
                 transforms.RandomFlip(),
-                transforms.RandomRotate(),
+                transforms.Random180Rotate(),
                 transforms.ToTensor()]
     
     train_loader = torch.utils.data.DataLoader(
