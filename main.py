@@ -62,24 +62,32 @@ def run(args, saveDirName='.', logger=None):
     Gen = fusion_net()
     Gen = torch.nn.DataParallel(Gen).cuda()
     optim_Gen = torch.optim.Adam(Gen.parameters(), args.lr)
-    scheduler_Gen = optim.lr_scheduler.MultiStepLR(optim_Gen, milestones=[2000, 3000, 4000], gamma=0.7)
+    scheduler_Gen = optim.lr_scheduler.MultiStepLR(optim_Gen, milestones=[10, 20], gamma=0.7)
 
     Dis = Discriminator()
     Dis = torch.nn.DataParallel(Dis).cuda()
     optim_Dis = torch.optim.Adam(Dis.parameters(), args.lr)
-    scheduler_Dis = optim.lr_scheduler.MultiStepLR(optim_Dis, milestones=[2000, 3000, 4000], gamma=0.7)
+    scheduler_Dis = optim.lr_scheduler.MultiStepLR(optim_Dis, milestones=[10, 20], gamma=0.7)
     
     if args.resume is not None:
         state = torch.load(args.resume)
         start_epoch = state['epoch']
-        Gen.load_state_dict(state['Gen'])
-        optim_Gen.load_state_dict(state['optim_Gen'])
-        scheduler_Gen.load_state_dict(state['scheduler_Gen'])
+        Gen.load_state_dict(state['gen'])
+        # optim_Gen.load_state_dict(state['gen_optim'])
+        # scheduler_Gen.load_state_dict(state['gen_scheduler'])
 
-        Dis.load_state_dict(state['Dis'])
-        optim_Dis.load_state_dict(state['optim_Dis'])
-        scheduler_Dis.load_state_dict(state['scheduler_Dis'])
-        print('Complete the resume')
+        # Gen.load_state_dict(state['Gen'])
+        # optim_Gen.load_state_dict(state['optim_Gen'])
+        # scheduler_Gen.load_state_dict(state['scheduler_Gen'])
+
+        Dis.load_state_dict(state['dis'])
+        # optim_Dis.load_state_dict(state['dis_optim'])
+        # scheduler_Dis.load_state_dict(state['dis_scheduler'])
+
+        # Dis.load_state_dict(state['Dis'])
+        # optim_Dis.load_state_dict(state['optim_Dis'])
+        # scheduler_Dis.load_state_dict(state['scheduler_Dis'])
+        logger.info("Complete the resume!")
     else:
         start_epoch = 0
 
@@ -96,7 +104,6 @@ def run(args, saveDirName='.', logger=None):
 
     cudnn.benchmark = True
     best_prec1 = 0
-    lr = args.lr
     plot_val_scores = []
     plot_epochs = []
     plot_iters =  []
@@ -109,7 +116,7 @@ def run(args, saveDirName='.', logger=None):
     criterions = criterion, gan_criterion
     if args.cmd == 'train' : # train mode
         for epoch in range(start_epoch, args.epochs):
-            # logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, lr))
+            logger.info('Epoch: [{0}]\tlr {1:.06f}'.format(epoch, get_lr(optim_Gen)))
             ## train the network
             train_losses = train(train_loader, models, optims, criterions, epoch, saveDirName, args.gan_weight, eval_score=psnr, logger=logger)        
             
@@ -149,6 +156,10 @@ def run(args, saveDirName='.', logger=None):
 
     else :  # test mode (if epoch = 0, the image format is png)
         val_score = validate(test_loader, Gen, batch_size=batch_size, output_dir=saveDirName, save_vis=True, epoch=start_epoch, logger=logger, phase='test')
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 def parse_args():
     # Training settings
